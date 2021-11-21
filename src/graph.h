@@ -77,18 +77,22 @@ public:
   friend Graph mergeDisconnectedGraphs(Graph g1, Graph g2, Edge e);
 };
 
-// Merging two disconnected subgraphs using an edge
-Graph mergeDisconnectedSubGraphs(Graph &g1, Graph &g2, Edge e) {
-  // Create merged adjacency list
-  std::vector<std::vector<Pair>> new_adjac_list(g1.getGraph());
-  // Create space to store result
-  new_adjac_list.reserve(g1.nVertex() + g2.nVertex());
-  // Append the vertices from g2 onto g1
-  std::vector<std::vector<Pair>> g2_adjac_list = g2.getGraph();
-  new_adjac_list.insert(new_adjac_list.end(), g2_adjac_list.begin(), g2_adjac_list.end());
-  // Create new graph with merged adjacency list
-  Graph new_graph(new_adjac_list);
-  new_graph.addEdge(e.parent, e.child, e.weight);
-  return(new_graph);
-}
+// TODO: Make this code work. Needs to either modify keys of g2 or initialize new_adjac_list
+//       to the size of the maximal key value in either graph and have unused allocated space
+//       for key values not present.
+// // Merging two disconnected subgraphs using an edge
+// Graph mergeDisconnectedSubGraphs(Graph &g1, Graph &g2, Edge e) {
+//   // Create merged adjacency list
+//   std::vector<std::vector<Pair>> new_adjac_list(g1.getGraph());
+//   // Create space to store result
+//   new_adjac_list.reserve(g1.nVertex() + g2.nVertex());
+//   // Append the vertices from g2 onto g1
+//   std::vector<std::vector<Pair>> g2_adjac_list = g2.getGraph();
+//   new_adjac_list.insert(new_adjac_list.end(), g2_adjac_list.begin(), g2_adjac_list.end());
+//   // Create new graph with merged adjacency list
+//   Graph new_graph(new_adjac_list);
+//   new_graph.addEdge(e.parent, e.child, e.weight);
+//   return(new_graph);
+// }
+
 
