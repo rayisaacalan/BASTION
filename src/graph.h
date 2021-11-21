@@ -74,8 +74,20 @@ public:
   std::vector<std::vector<Pair>> getGraph() {
     return(adjac_list);
   }
+  std::vector<Pair> getVertex(int key) {
+    return(adjac_list[key]);
+  }
   friend Graph mergeDisconnectedGraphs(Graph g1, Graph g2, Edge e);
 };
+
+bool isConnected(Graph g, int parent, int child) {
+  for(auto edge = g.getVertex(parent).begin(); edge != g.getVertex(parent).end(); ++edge) {
+    if(edge->first == child) {
+      return(true);
+    }
+  }
+  return(false);
+}
 
 // TODO: Make this code work. Needs to either modify keys of g2 or initialize new_adjac_list
 //       to the size of the maximal key value in either graph and have unused allocated space
