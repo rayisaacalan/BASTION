@@ -77,9 +77,42 @@ public:
   std::vector<Pair> getVertex(int key) {
     return(adjac_list[key]);
   }
-  friend Graph mergeDisconnectedGraphs(Graph g1, Graph g2, Edge e);
+  Graph getSubgraph(std::vector<int> keys) {
+    // This graph contains all the vertices not in the subgraph but are totally disconnected (empty vector)
+    // This would be better if it was using Boost's subgraph system, but for the purposes of this
+    // project is sufficient. It also makes merging subgraphs more reasonable to avoid key changing
+    // Note this is a subtractive subgraph (start with full and cull down) instead of constructive
+    // (loop through and add all edges between included vertices). As such it might be slower
+    // for small subgraphs of large graphs
+
+    // Sort input to improve search speed
+    std::vector<int> sorted_keys(keys);
+    std::sort(sorted_keys.begin(), sorted_keys.end());
+    // Allocate resultant adjacency list
+    std::vector<std::vector<Pair>> new_adjac_list(adjac_list);
+    for(int i = 0; i < adjac_list.size(); ++i) {
+      // If a vertex key is not in the provided list
+      if(!(std::binary_search(sorted_keys.begin(), sorted_keys.end(), i))) {
+        // Go to each of its connections and remove the edge on the remote end
+        for(auto local_edge = new_adjac_list[i].begin(); local_edge != new_adjac_list[i].end(); local_edge++) {
+          // Assumption: there does not exist multiple edges connecting the same two vertices
+          for(auto remote_edge = new_adjac_list[local_edge->first].begin(); remote_edge != new_adjac_list[local_edge->first].end(); remote_edge++) {
+            if(remote_edge->first == i) {
+              new_adjac_list[local_edge->first].erase(remote_edge);
+              break; // Move on to next local_edge
+            }
+          }
+          new_adjac_list[i].erase(local_edge);
+        }
+      }
+    }
+    // Return subgraph
+    return(Graph(new_adjac_list));
+  }
+  //friend Graph mergeDisconnectedGraphs(Graph g1, Graph g2, Edge e);
 };
 
+// Gets connectedness of two vertices (by key) in a graph g
 bool isConnected(Graph g, int parent, int child) {
   for(auto edge = g.getVertex(parent).begin(); edge != g.getVertex(parent).end(); ++edge) {
     if(edge->first == child) {
@@ -88,6 +121,8 @@ bool isConnected(Graph g, int parent, int child) {
   }
   return(false);
 }
+
+
 
 // TODO: Make this code work. Needs to either modify keys of g2 or initialize new_adjac_list
 //       to the size of the maximal key value in either graph and have unused allocated space
