@@ -43,11 +43,38 @@ public:
       double weight = elem->weight;
       // Add edge from parent to child
       adjac_list[parent].push_back(std::make_pair(child, weight));
-      // Add edge from child to parent [Remove to make graph weighted]
+      // Add edge from child to parent [Remove to make graph directed]
       adjac_list[child].push_back(std::make_pair(parent, weight));
     }
   }
-
+  // Get the number of vertices of the graph
+  int nVertex() {
+    return(adjac_list.size());
+  }
+  // Get the number of edges of the graph
+  int nEdge() {
+    int nedges = 0;
+    // Count every edge
+    for(auto vert = adjac_list.begin(); vert != adjac_list.end(); ++vert) {
+      nedges += vert->size();
+    }
+    // Divide by 2 since every edge is counted twice [Remove when graph is directed]
+    return(nedges/2);
+  }
+  // Append an additional edge to the graph
+  void addEdge(int parent, int child, double weight) {
+    Edge newEdge;
+    newEdge.child = child;
+    newEdge.parent = parent;
+    newEdge.weight = weight;
+    // Add new edge to both vertices
+    adjac_list[parent].push_back(std::make_pair(child, weight));
+    adjac_list[child].push_back(std::make_pair(parent, weight));
+  }
+  std::vector<std::vector<Pair>> getGraph() {
+    return(adjac_list);
+  }
+  friend Graph mergeDisconnectedGraphs(Graph g1, Graph g2, Edge e);
 };
 
 // Merging two disconnected subgraphs using an edge
