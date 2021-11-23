@@ -16,4 +16,4 @@ RoxygenNote: 7.1.2
 LinkingTo: 
     Rcpp
 Imports: 
-    Rcpp
+    Rcpp, igraph
