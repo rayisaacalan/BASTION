@@ -16,7 +16,9 @@ constructGraph = function(coordinates, k) {
 #' @param graph An object of class 'graph' from the igraph package
 #' @param nclust An integer, the number of different clusters to assign points to. Must be at most N (the number of vertices in graph)
 #'
-#' @return A vector of integers of length N with nclust unique integers which map each vertex to a cluster
+#' @return A list containing two elements:
+#' 'graph': The input graph with inter-cluster edges inactive
+#' 'membership': A vector of integers of length N with nclust unique integers which map each vertex to a cluster
 #' @export
 #'
 #' @examples
@@ -30,7 +32,9 @@ constructClusters = function(graph, nclust) {
 #' @param membership A vector of integers of length N with k unique integers (k < N) which map each vertex to a cluster
 #' @param clust Integer, the cluster to split. Must be between 0 and k - 1
 #'
-#' @return A vector of integers of length N with k + 1 unique integers which map each vertex to a cluster
+#' @return A list containing two elements:
+#' 'graph': The input graph with 1 fewer active edge
+#' 'membership': A vector of integers of length N with k + 1 unique integers which map each vertex to a cluster
 #' @export
 #'
 #' @examples
@@ -44,7 +48,9 @@ graphBirth = function(graph, membership, clust) {
 #' @param membership A vector of integers of length N with k unique integers (1 < k <= N) which map each vertex to a cluster
 #' @param clust Integer, the cluster to split. Must be between 0 and k - 1
 #'
-#' @return A vector of integers of length N with k - 1 unique integers which map each vertex to a cluster
+#' @return A list containing two elements:
+#' 'graph': The input graph with 1 additional active edge
+#' 'membership': A vector of integers of length N with k - 1 unique integers which map each vertex to a cluster
 #' @export
 #'
 #' @examples
@@ -57,7 +63,9 @@ graphDeath = function(graph, membership, clust) {
 #' @param graph An object of class 'graph' from the igraph package
 #' @param membership A vector of integers of length N with k unique integers (1 < k <= N) which map each vertex to a cluster
 #'
-#' @return A vector of integers of length N with k unique integers which map each vertex to a cluster, likely different than input membership
+#' @return A list containing two elements:
+#' 'graph': The input graph with the different set of active edges
+#' 'membership': A vector of integers of length N with k unique integers which map each vertex to a cluster, likely different than input membership
 #' @export
 #'
 #' @examples
@@ -71,7 +79,7 @@ graphChange = function(graph, membership) {
 #' @param membership  A vector of integers of length N with k unique integers (1 < k <= N) which map each vertex to a cluster
 #'
 #' @return A list containing two elements:
-#' 'graph': the graph with each cluster having a new minimum spanning tree based on resampled edge weights
+#' 'graph': The input graph with each cluster having a new minimum spanning tree based on resampled edge weights
 #' 'membership': A vector of integers of length N with k unique integers which map each vertex to a cluster
 #' @export
 #'
