@@ -64,4 +64,18 @@ graphDeath = function(graph, membership, clust) {
 graphChange = function(graph, membership) {
 
 }
+
+#' Generate new spanning trees for each cluster
+#'
+#' @param graph An object of class 'graph' from the igraph package
+#' @param membership  A vector of integers of length N with k unique integers (1 < k <= N) which map each vertex to a cluster
+#'
+#' @return A list containing two elements:
+#' 'graph': the graph with each cluster having a new minimum spanning tree based on resampled edge weights
+#' 'membership': A vector of integers of length N with k unique integers which map each vertex to a cluster
+#' @export
+#'
+#' @examples
+graphHyper = function(graph, membership) {
+
 }
