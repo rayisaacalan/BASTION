@@ -33,7 +33,7 @@ The tasks for this semester are as follows:
   * Change move
   * Hyper move
 - R functions
-  * Construct Graph (K nearest neighbors)
+  * ~~Construct Graph (K nearest neighbors)~~
   * Construct Clusters
 - R wrappers
   * Compatibility / input validity checks

@@ -8,7 +8,6 @@
 #'
 #' @examples
 constructGraph = function(coordinates, k) {
-
 # Create a k nearest neighbor graph using first two columns of input
   # Double check that input is of appropriate dimension
   if(ncol(coordinates) < 2) {
@@ -19,6 +18,17 @@ constructGraph = function(coordinates, k) {
   if((class(coord_data[, 1]) != "numeric") || (class(coord_data[, 2]) != "numeric")) {
     stop("First 2 columns must be of class numeric")
   }
+  # Construct k nearest neighbor graph
+  graph = cccd::nng(coord_data, k = k)
+# Measure euclidean distance for each edge (TODO: allow for output of custom distance function)
+  # Get a 2 column matrix where each row is an edge from first column vertex to second column vertex
+  edge_matrix = ends(graph, E(graph))
+  # Calculate Euclidean distance for each edge
+  edge_distances = sqrt(rowSums(coord_data[edge_matrix[ , 1], ] - coord_data[edge_matrix[ , 2], ]^2))
+  # Assign the distance for each edge to the graph's edge weights
+  E(graph)$weight = edge_distances
+  # Return the constructed graph
+  return(graph)
 }
 
 #' Construct a cluster membership list for a graph
