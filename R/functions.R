@@ -9,6 +9,16 @@
 #' @examples
 constructGraph = function(coordinates, k) {
 
+# Create a k nearest neighbor graph using first two columns of input
+  # Double check that input is of appropriate dimension
+  if(ncol(coordinates) < 2) {
+    stop("Function requires at least 2 columns of coordinate data")
+  }
+  # Extract only the relevant data
+  coord_data = coordinates[ , 1:2]
+  if((class(coord_data[, 1]) != "numeric") || (class(coord_data[, 2]) != "numeric")) {
+    stop("First 2 columns must be of class numeric")
+  }
 }
 
 #' Construct a cluster membership list for a graph
