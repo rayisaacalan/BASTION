@@ -52,4 +52,16 @@ graphDeath = function(graph, membership, clust) {
 
 }
 
+#' Perform a cluster death operation followed by a cluster birth operation
+#'
+#' @param graph An object of class 'graph' from the igraph package
+#' @param membership A vector of integers of length N with k unique integers (1 < k <= N) which map each vertex to a cluster
+#'
+#' @return A vector of integers of length N with k unique integers which map each vertex to a cluster, likely different than input membership
+#' @export
+#'
+#' @examples
+graphChange = function(graph, membership) {
+
+}
 }
