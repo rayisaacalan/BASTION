@@ -28,7 +28,7 @@ constructClusters = function(graph, nclust) {
 #'
 #' @param graph An object of class 'graph' from the igraph package
 #' @param membership A vector of integers of length N with k unique integers (k < N) which map each vertex to a cluster
-#' @param clust Integer, the cluster to split. Must be between 0 and k
+#' @param clust Integer, the cluster to split. Must be between 0 and k - 1
 #'
 #' @return A vector of integers of length N with k + 1 unique integers which map each vertex to a cluster
 #' @export
@@ -37,4 +37,19 @@ constructClusters = function(graph, nclust) {
 graphBirth = function(graph, membership, clust) {
 
 }
+
+#' Perform a cluster death operation (merge an existing cluster)
+#'
+#' @param graph An object of class 'graph' from the igraph package
+#' @param membership A vector of integers of length N with k unique integers (1 < k <= N) which map each vertex to a cluster
+#' @param clust Integer, the cluster to split. Must be between 0 and k - 1
+#'
+#' @return A vector of integers of length N with k - 1 unique integers which map each vertex to a cluster
+#' @export
+#'
+#' @examples
+graphDeath = function(graph, membership, clust) {
+
+}
+
 }
