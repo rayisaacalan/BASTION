@@ -1,3 +1,6 @@
 ^BASTION\.Rproj$
 ^\.Rproj\.user$
 ^draft\.R$
+^codecov\.yml$
+^/R/draft\.R$
+^R/draft\.R$

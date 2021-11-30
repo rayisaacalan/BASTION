@@ -122,7 +122,9 @@ bool isConnected(Graph g, int parent, int child) {
   return(false);
 }
 
+Graph primsMST(Graph g, int rootKey) {
 
+}
 
 // TODO: Make this code work. Needs to either modify keys of g2 or initialize new_adjac_list
 //       to the size of the maximal key value in either graph and have unused allocated space
