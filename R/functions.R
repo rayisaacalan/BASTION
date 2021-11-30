@@ -22,11 +22,11 @@ constructGraph = function(coordinates, k) {
   graph = cccd::nng(coord_data, k = k)
 # Measure euclidean distance for each edge (TODO: allow for output of custom distance function)
   # Get a 2 column matrix where each row is an edge from first column vertex to second column vertex
-  edge_matrix = ends(graph, E(graph))
+  edge_matrix = igraph::ends(graph, igraph::E(graph))
   # Calculate Euclidean distance for each edge
-  edge_distances = sqrt(rowSums(coord_data[edge_matrix[ , 1], ] - coord_data[edge_matrix[ , 2], ]^2))
+  edge_distances = sqrt(rowSums((coord_data[edge_matrix[ , 1], ] - coord_data[edge_matrix[ , 2], ])^2))
   # Assign the distance for each edge to the graph's edge weights
-  E(graph)$weight = edge_distances
+  igraph::E(graph)$weight = edge_distances
   # Return the constructed graph
   return(graph)
 }
@@ -45,7 +45,7 @@ constructGraph = function(coordinates, k) {
 #' @examples
 constructClusters = function(graph, nclust, minclust = NULL) {
   # First, get the number of vertices
-  N = vcount(graph)
+  N = igraph::vcount(graph)
   # Check that nclust is valid
   if(nclust > N) {
     stop("nclust cannot be larger than the number of vertices in graph")
@@ -67,16 +67,16 @@ constructClusters = function(graph, nclust, minclust = NULL) {
   # Allocate the membership vector
   membership = rep(0, N)
   # Construct minimum spanning tree on the graph
-  minspantree = mst(graph)
+  minspantree = igraph::mst(graph)
   # Do the following at least once and until all the clusters meet the minimum size requirement:
   repeat {
     # Choose nclust - 1 edges to delete from minspantree
     # Note: by definition a minimum spanning tree will have (N - 1) edges
     deleted_edge_ids = sample(1:(N - 1), nclust - 1, replace = FALSE)
     # Create a new graph with nclust spanning trees (a forest)
-    spanforest = delete.edges(minspantree, deleted_edge_ids)
+    spanforest = igraph::delete.edges(minspantree, deleted_edge_ids)
     # Update the membership of each vertex
-    membership = components(spanforest)$membership
+    membership = igraph::components(spanforest)$membership
     # If all the clusters meet the size requirement, we are done
     if(min(table(membership)) >= minclust) {
       break
