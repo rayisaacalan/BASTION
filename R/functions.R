@@ -31,6 +31,31 @@ constructGraph = function(coordinates, k) {
   return(graph)
 }
 
+
+#' Get Betweenness of Edges in Clustered Graph
+#'
+#' @param graph An object of class 'graph' from the igraph package.
+#' @param membership A vector of integers of length N (see \code{\link{constructClusters}})
+#'
+#' @return A vector of boolean values of length \code{ecount(graph)} where each TRUE value represents an edge that connects distinct clusters
+#' @export
+#'
+#' @examples
+edgeBetweenClust <- function(graph, membership) {
+  # Get a matrix of all edges in graph by numeric id (column 1 is source, column 2 is destination)
+  edge_matrix = igraph::as_edgelist(graph, names = F)
+  # Get the vector of cluster membership for all the edge sources
+  membership_source = membership[edge_matrix[, 1]]
+  # Get the vector of cluster membership for all the edge destinations
+  membership_dest = membership[edge_matrix[, 2]]
+  # Initialize all edges as being within the same cluster (between clusters is false)
+  edge_status = rep(FALSE, igraph::ecount(graph))
+  # If the cluster membership between the edge source & destination is not the same, between clusters is true
+  edge_status[membership_source != membership_dest] = TRUE
+  # Return betweenness of edges
+  return(edge_status)
+}
+
 #' Construct a cluster membership list for a graph
 #'
 #' @param graph An object of class 'graph' from the igraph package. The graph must have weights for each edge
