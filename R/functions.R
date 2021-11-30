@@ -63,7 +63,7 @@ edgeBetweenClust <- function(graph, membership) {
 #' @param minclust An integer, the smallest allowable cluster size. By default, one-tenth the ratio of vertices to nclust.
 #'
 #' @return A list containing two elements:
-#' 'graph': The input graph with inter-cluster edges inactive
+#' 'clustered_graph': The input graph with inter-cluster edges removed
 #' 'membership': A vector of integers of length N with nclust unique integers which map each vertex to a cluster
 #' @export
 #'
@@ -107,7 +107,14 @@ constructClusters = function(graph, nclust, minclust = NULL) {
       break
     }
   }
-  return(membership)
+  # Get vector of cluster betweenness
+  between_clusters = edgeBetweenClust(graph, membership)
+  # Get ids of edges which are between clusters
+  edge_ids_between = which(between_clusters)
+  # Delete those edges
+  clustered_graph = igraph::delete.edges(graph, edge_ids_between)
+  # Return list with clustered graph and vertex membership
+  return(list(clustered_graph = clustered_graph, membership = membership))
 }
 
 #' Perform a cluster birth operation (split an existing cluster)
