@@ -149,7 +149,41 @@ constructClusters = function(graph, nclust, minclust = NULL) {
 #'
 #' @examples
 graphBirth = function(graph, membership, clust) {
-
+  # Test that membership is valid
+  N = igraph::vcount(graph)
+  if(length(membership) != N) {
+    stop("membership is of incorrect length, should be same length as vcount of graph")
+  }
+  # Test that clust is valid
+  k = length(unique(membership))
+  if(clust > k || clust < 1) {
+    stop("Invalid cluster to split, should be an integer between 1 and k")
+  }
+  # Test that k is valid
+  if(k >= N) {
+    stop("Not enough vertices in graph to generate a new cluster")
+  }
+  # Get the vertex (keys) which belong to clust from membership
+  ids_by_cluster = split(1:N, membership)
+  clust_ids = ids_by_cluster[[clust]]
+  # Test that there is at least 2 vertices in the specified cluster
+  if(length(clust_ids) < 2) {
+    stop("Specified cluster has only 1 vertex; cannot split")
+  }
+  # Get the sequence of edges in the specified cluster
+  clust_edges = igraph::E(graph)[clust_ids %--% clust_ids]
+  # Check for validity of cluster (should be a tree; trees have n - 1 edges for n vertices)
+  if((length(clust_ids)) - 1 != length(clust_edges)) {
+    warning("Possibly unintended behavior: Input graph is not a spanning forest; clust induced subgraph is not a tree")
+  }
+  # Randomly choose an edge to remove
+  cut_edge = sample(clust_edges, 1)
+  # Remove the edge
+  cut_graph = igraph::delete.edges(graph, cut_edge)
+  # Update the membership of each cluster
+  cut_membership = igraph::components(cut_graph)$membership
+  # Return the updated graph and new membership
+  return(list(graph = cut_graph, membership = cut_membership))
 }
 
 #' Perform a cluster death operation (merge an existing cluster)
