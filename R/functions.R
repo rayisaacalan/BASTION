@@ -84,6 +84,7 @@ clusterGraph = function(graph, membership) {
 #'
 #' @return A list containing two elements:
 #' 'clustered_graph': The input graph with inter-cluster edges removed
+#' 'spanning_forest': The input graph with inter-cluster edges removed, and every cluster induced subgraph is a spanning tree
 #' 'membership': A vector of integers of length N with nclust unique integers which map each vertex to a cluster
 #' @export
 #'
@@ -128,8 +129,8 @@ constructClusters = function(graph, nclust, minclust = NULL) {
     }
   }
   clustered_graph = clusterGraph(graph, membership)
-  # Return list with clustered graph and vertex membership
-  return(list(clustered_graph = clustered_graph, membership = membership))
+  # Return list with clustered graph, spanning forest, and vertex membership
+  return(list(clustered_graph = clustered_graph, spanning_forest = spanforest, membership = membership))
 }
 
 
