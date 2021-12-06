@@ -41,7 +41,7 @@ constructGraph = function(coordinates, k) {
 #' @export
 #'
 #' @examples
-edgeBetweenClust <- function(graph, membership) {
+edgeBetweenClust = function(graph, membership) {
   # Get a matrix of all edges in graph by numeric id (column 1 is source, column 2 is destination)
   edge_matrix = igraph::as_edgelist(graph, names = F)
   # Get the vector of cluster membership for all the edge sources
@@ -55,6 +55,26 @@ edgeBetweenClust <- function(graph, membership) {
   # Return betweenness of edges
   return(edge_status)
 }
+
+#' Remove inter-cluster edges from a graph
+#'
+#' @inheritParams edgeBetweenClust
+#'
+#' @return An object of class 'graph' from the igraph package, the input graph with inter-cluster edges removed
+#' @export
+#'
+#' @examples
+clusterGraph = function(graph, membership) {
+  # Get vector of cluster betweenness
+  between_clusters = edgeBetweenClust(graph, membership)
+  # Get ids of edges which are between clusters
+  edge_ids_between = which(between_clusters)
+  # Delete those edges
+  clustered_graph = igraph::delete.edges(graph, edge_ids_between)
+  # Return clustered graph
+  return(clusterGraph)
+}
+
 
 #' Construct a cluster membership list for a graph
 #'
@@ -107,15 +127,13 @@ constructClusters = function(graph, nclust, minclust = NULL) {
       break
     }
   }
-  # Get vector of cluster betweenness
-  between_clusters = edgeBetweenClust(graph, membership)
-  # Get ids of edges which are between clusters
-  edge_ids_between = which(between_clusters)
-  # Delete those edges
-  clustered_graph = igraph::delete.edges(graph, edge_ids_between)
+  clustered_graph = clusterGraph(graph, membership)
   # Return list with clustered graph and vertex membership
   return(list(clustered_graph = clustered_graph, membership = membership))
 }
+
+
+
 
 #' Perform a cluster birth operation (split an existing cluster)
 #'
