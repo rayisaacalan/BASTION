@@ -7,6 +7,9 @@
 #' @export
 #'
 #' @examples
+#' coords = data.frame(lon = rnorm(50), lat = rnorm(50))
+#' g = constructGraph(coords, 4)
+#' plot(g, layout = as.matrix(coords), edge.arrow.mode = 0)
 constructGraph = function(coordinates, k) {
 # Create a k nearest neighbor graph using first two columns of input
   # Double check that input is of appropriate dimension
