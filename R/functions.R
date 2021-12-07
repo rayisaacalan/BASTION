@@ -127,6 +127,10 @@ constructClusters = function(graph, nclust, minclust = NULL) {
     # Can't have every cluster so large that there are insufficient vertices
     stop("minimum cluster size is too large; decrease it or nclust or add more vertices")
   }
+  # Check that the input graph is connected (otherwise MST cuts will result in wrong number of clusters)
+  if(!igraph::is.connected(graph)) {
+    warning("Input graph is not connected; clusters may not be contiguous")
+  }
   # Allocate the membership vector
   membership = rep(0, N)
   # Construct minimum spanning tree on the graph
@@ -135,7 +139,13 @@ constructClusters = function(graph, nclust, minclust = NULL) {
   repeat {
     # Choose nclust - 1 edges to delete from minspantree
     # Note: by definition a minimum spanning tree will have (N - 1) edges
-    deleted_edge_ids = sample(1:(N - 1), nclust - 1, replace = FALSE)
+    # However, if the input graph is not connected, then a 'cut' has already been implicitly done
+    if(igraph::is.connected(graph)) {
+      deleted_edge_ids = sample(1:(N - 1), nclust - 1, replace = FALSE)
+    } else {
+      disconnections = igraph::components(minspantree)$no
+      deleted_edge_ids = sample(1:(N - disconnections), nclust - disconnections, replace = FALSE)
+    }
     # Create a new graph with nclust spanning trees (a forest)
     spanforest = igraph::delete.edges(minspantree, deleted_edge_ids)
     # Update the membership of each vertex
