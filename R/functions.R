@@ -102,6 +102,10 @@ clusterGraph = function(graph, membership) {
 #' @export
 #'
 #' @examples
+#' coords = data.frame(lon = rnorm(50), lat = rnorm(50))
+#' g = constructGraph(coords, 4)
+#' clust_out = constructClusters(g, 5, minclust = 3)
+#' plot(clust_out$spanning_forest, layout = as.matrix(coords), vertex.color = clust_out$membership, edge.arrow.mode = 0)
 constructClusters = function(graph, nclust, minclust = NULL) {
   # First, get the number of vertices
   N = igraph::vcount(graph)
