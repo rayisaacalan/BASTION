@@ -72,6 +72,11 @@ edgeBetweenClust = function(graph, membership) {
 #' @export
 #'
 #' @examples
+#' coords = data.frame(lon = rnorm(50), lat = rnorm(50))
+#' g = constructGraph(coords, 4)
+#' clust_membership = constructClusters(g, 5, minclust = 3)$membership
+#' clust_g = clusterGraph(g, clust_membership)
+#' plot(clust_g, layout = as.matrix(coords), vertex.color = clust_membership, edge.arrow.mode = 0)
 clusterGraph = function(graph, membership) {
   # Get vector of cluster betweenness
   between_clusters = edgeBetweenClust(graph, membership)
@@ -80,7 +85,7 @@ clusterGraph = function(graph, membership) {
   # Delete those edges
   clustered_graph = igraph::delete.edges(graph, edge_ids_between)
   # Return clustered graph
-  return(clusterGraph)
+  return(clustered_graph)
 }
 
 
