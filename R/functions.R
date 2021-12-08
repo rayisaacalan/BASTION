@@ -141,6 +141,8 @@ constructClusters = function(graph, nclust, minclust = NULL) {
   minspantree = igraph::mst(graph)
   # Do the following at least once and until all the clusters meet the minimum size requirement:
   repeat {
+    # Count number of iterations in case a valid tree is not found in a 'reasonable' number of iterations
+    iterations = 0
     # Choose nclust - 1 edges to delete from minspantree
     # Note: by definition a minimum spanning tree will have (N - 1) edges
     # However, if the input graph is not connected, then a 'cut' has already been implicitly done
@@ -158,6 +160,11 @@ constructClusters = function(graph, nclust, minclust = NULL) {
     if(min(table(membership)) >= minclust) {
       break
     }
+    if(iterations > 100) {
+      warning("Failed to find clusters meeting parameters in 100 iterations; clusters might be smaller than expected")
+      break
+    }
+    iterations = iterations + 1
   }
   clustered_graph = clusterGraph(graph, membership)
   # Return list with clustered graph, spanning forest, and vertex membership
