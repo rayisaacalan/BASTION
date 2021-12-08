@@ -7,6 +7,7 @@
 #' @export
 #'
 #' @examples
+#' set.seed(1)
 #' coords = data.frame(lon = rnorm(50), lat = rnorm(50))
 #' g = constructGraph(coords, 4)
 #' plot(g, layout = as.matrix(coords), edge.arrow.mode = 0)
@@ -44,6 +45,7 @@ constructGraph = function(coordinates, k) {
 #' @export
 #'
 #' @examples
+#' set.seed(1)
 #' coords = data.frame(lon = rnorm(50), lat = rnorm(50))
 #' g = constructGraph(coords, 5)
 #' clust_membership = constructClusters(g, 6, minclust = 5)$membership
@@ -72,6 +74,7 @@ edgeBetweenClust = function(graph, membership) {
 #' @export
 #'
 #' @examples
+#' set.seed(1)
 #' coords = data.frame(lon = rnorm(50), lat = rnorm(50))
 #' g = constructGraph(coords, 4)
 #' clust_membership = constructClusters(g, 5, minclust = 3)$membership
@@ -102,6 +105,7 @@ clusterGraph = function(graph, membership) {
 #' @export
 #'
 #' @examples
+#' set.seed(1)
 #' coords = data.frame(lon = rnorm(50), lat = rnorm(50))
 #' g = constructGraph(coords, 4)
 #' clust_out = constructClusters(g, 5, minclust = 3)
@@ -175,6 +179,7 @@ constructClusters = function(graph, nclust, minclust = NULL) {
 #' @export
 #'
 #' @examples
+#' set.seed(1234)
 #' coords = data.frame(lon = rnorm(50), lat = rnorm(50))
 #' g = constructGraph(coords, 5)
 #' clust_out = constructClusters(g, 6, minclust = 5)
@@ -235,6 +240,7 @@ graphBirth = function(graph, membership, clust = NULL) {
 #' @export
 #'
 #' @examples
+#' set.seed(1)
 #' coords = data.frame(lon = rnorm(50), lat = rnorm(50))
 #' g = constructGraph(coords, 6)
 #' clust_out = constructClusters(g, 8, minclust = 3)
@@ -282,6 +288,7 @@ graphDeath = function(graph, membership, full_graph) {
 #' @export
 #'
 #' @examples
+#' set.seed(1)
 #' coords = data.frame(lon = rnorm(80), lat = rnorm(80))
 #' g = constructGraph(coords, 5)
 #' clust_out = constructClusters(g, 6, minclust = 8)
