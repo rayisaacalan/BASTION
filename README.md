@@ -35,5 +35,5 @@ The tasks for this semester are as follows:
   * ~~Hyper Operation~~
 - Documentation
   * ~~Roxygen skeleton (basic i/o)~~
-  * Detailed descriptions
+  * ~~Detailed descriptions~~
   * ~~Examples~~

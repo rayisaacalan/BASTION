@@ -7,7 +7,7 @@
 edgeBetweenClust(graph, membership)
 }
 \arguments{
-\item{graph}{An object of class 'graph' from the igraph package.}
+\item{graph}{An object of class 'graph' from the \code{\link[igraph]{igraph}} package.}
 
 \item{membership}{A vector of integers of length N (see \code{\link{constructClusters}})}
 }
@@ -15,7 +15,11 @@ edgeBetweenClust(graph, membership)
 A vector of boolean values of length \code{ecount(graph)} where each TRUE value represents an edge that connects distinct clusters
 }
 \description{
-Get Betweenness of Edges in Clustered Graph
+\code{edgeBetweenClust} is a utility function which takes in a graph and the membership vector
+mapping each vertex to a certain cluster and returns a vector of boolean values. A value of 'TRUE'
+means that the corresponding edge in that edge list position connects vertices which belong to
+distinct clusters. A value of 'FALSE' means that the edge connects vertices which belong to the same
+cluster.
 }
 \examples{
 set.seed(1)
@@ -23,5 +27,15 @@ coords = data.frame(lon = rnorm(50), lat = rnorm(50))
 g = constructGraph(coords, 5)
 clust_membership = constructClusters(g, 6, minclust = 5)$membership
 betweenness = edgeBetweenClust(g, clust_membership)
-plot(g, layout = as.matrix(coords), edge.color = as.numeric(betweenness) + 1, edge.arrow.mode = 0)
+plot(g,
+     layout = as.matrix(coords),
+     edge.color = as.numeric(betweenness) + 1,
+     edge.arrow.mode = 0)
+}
+\references{
+Luo, Z.T. (*), Sang, H. and Mallick, B.K. (2021), BAST: Bayesian Additive Regression Spanning Trees
+for Complex Constrained Domain
+
+Luo, Z.T. (*), Sang, H. and Mallick, B.K. (2021), A Bayesian Contiguous Partitioning Method for
+Learning Clustered Latent Variables, Journal of Machine Learning Research, 22, 1-52.
 }

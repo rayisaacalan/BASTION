@@ -7,7 +7,7 @@
 graphBirth(graph, membership, clust = NULL)
 }
 \arguments{
-\item{graph}{An object of class 'graph' from the igraph package}
+\item{graph}{An object of class 'graph' from the \code{\link[igraph]{igraph}} package}
 
 \item{membership}{A vector of integers of length N with k unique integers (k < N) which map each vertex to a cluster}
 
@@ -19,14 +19,35 @@ A list containing two elements:
 \item{membership}{A vector of integers of length N with k + 1 unique integers which map each vertex to a cluster}
 }
 \description{
-Perform a cluster birth operation (split an existing cluster)
+\code{graphBirth} takes in a spanning forest graph with k disconnected components corresponding to
+the vector of cluster assignments 'membership' and splits an existing cluster. Optionally, the integer corresponding
+to one of the clusters can be specified as the one to split. If it is not specified, a cluster is uniformly selected at random.
+In the specified or selected cluster, an edge is uniformly randomly selected and cut, turning the one cluster into two.
 }
 \examples{
 set.seed(1234)
 coords = data.frame(lon = rnorm(50), lat = rnorm(50))
 g = constructGraph(coords, 5)
 clust_out = constructClusters(g, 6, minclust = 5)
-plot(clust_out$spanning_forest, layout = as.matrix(coords), vertex.color = clust_out$membership, edge.arrow.mode = 0)
-g_7_clusters = graphBirth(clust_out$spanning_forest, clust_out$membership, 4)
-plot(g_7_clusters$graph, layout = as.matrix(coords), vertex.color = g_7_clusters$membership, edge.arrow.mode = 0)
+plot(clust_out$spanning_forest,
+     layout = as.matrix(coords),
+     vertex.color = clust_out$membership,
+     edge.arrow.mode = 0)
+g_7_clusters = graphBirth(clust_out$spanning_forest,
+                          clust_out$membership,
+                          4)
+plot(g_7_clusters$graph,
+     layout = as.matrix(coords),
+     vertex.color = g_7_clusters$membership,
+     edge.arrow.mode = 0)
+}
+\references{
+Luo, Z.T. (*), Sang, H. and Mallick, B.K. (2021), BAST: Bayesian Additive Regression Spanning Trees
+for Complex Constrained Domain
+
+Luo, Z.T. (*), Sang, H. and Mallick, B.K. (2021), A Bayesian Contiguous Partitioning Method for
+Learning Clustered Latent Variables, Journal of Machine Learning Research, 22, 1-52.
+}
+\seealso{
+\code{\link{constructClusters}}, \code{\link{graphDeath}}, \code{\link{graphChange}}, \code{\link{graphHyper}}
 }

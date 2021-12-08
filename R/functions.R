@@ -84,7 +84,10 @@ constructGraph = function(coordinates, k) {
 #' g = constructGraph(coords, 5)
 #' clust_membership = constructClusters(g, 6, minclust = 5)$membership
 #' betweenness = edgeBetweenClust(g, clust_membership)
-#' plot(g, layout = as.matrix(coords), edge.color = as.numeric(betweenness) + 1, edge.arrow.mode = 0)
+#' plot(g,
+#'      layout = as.matrix(coords),
+#'      edge.color = as.numeric(betweenness) + 1,
+#'      edge.arrow.mode = 0)
 edgeBetweenClust = function(graph, membership) {
   # Get a matrix of all edges in graph by numeric id (column 1 is source, column 2 is destination)
   edge_matrix = igraph::as_edgelist(graph, names = F)
@@ -172,7 +175,10 @@ clusterGraph = function(graph, membership) {
 #' coords = data.frame(lon = rnorm(50), lat = rnorm(50))
 #' g = constructGraph(coords, 4)
 #' clust_out = constructClusters(g, 5, minclust = 3)
-#' plot(clust_out$spanning_forest, layout = as.matrix(coords), vertex.color = clust_out$membership, edge.arrow.mode = 0)
+#' plot(clust_out$spanning_forest,
+#'      layout = as.matrix(coords),
+#'      vertex.color = clust_out$membership,
+#'      edge.arrow.mode = 0)
 constructClusters = function(graph, nclust, minclust = NULL) {
   # First, get the number of vertices
   N = igraph::vcount(graph)
@@ -268,9 +274,17 @@ constructClusters = function(graph, nclust, minclust = NULL) {
 #' coords = data.frame(lon = rnorm(50), lat = rnorm(50))
 #' g = constructGraph(coords, 5)
 #' clust_out = constructClusters(g, 6, minclust = 5)
-#' plot(clust_out$spanning_forest, layout = as.matrix(coords), vertex.color = clust_out$membership, edge.arrow.mode = 0)
-#' g_7_clusters = graphBirth(clust_out$spanning_forest, clust_out$membership, 4)
-#' plot(g_7_clusters$graph, layout = as.matrix(coords), vertex.color = g_7_clusters$membership, edge.arrow.mode = 0)
+#' plot(clust_out$spanning_forest,
+#'      layout = as.matrix(coords),
+#'      vertex.color = clust_out$membership,
+#'      edge.arrow.mode = 0)
+#' g_7_clusters = graphBirth(clust_out$spanning_forest,
+#'                           clust_out$membership,
+#'                           4)
+#' plot(g_7_clusters$graph,
+#'      layout = as.matrix(coords),
+#'      vertex.color = g_7_clusters$membership,
+#'      edge.arrow.mode = 0)
 graphBirth = function(graph, membership, clust = NULL) {
   # Test that membership is valid
   N = igraph::vcount(graph)
@@ -346,9 +360,17 @@ graphBirth = function(graph, membership, clust = NULL) {
 #' coords = data.frame(lon = rnorm(50), lat = rnorm(50))
 #' g = constructGraph(coords, 6)
 #' clust_out = constructClusters(g, 8, minclust = 3)
-#' plot(clust_out$spanning_forest, layout = as.matrix(coords), vertex.color = clust_out$membership, edge.arrow.mode = 0)
-#' g_7_clusters = graphDeath(clust_out$spanning_forest, clust_out$membership, g)
-#' plot(g_7_clusters$graph, layout = as.matrix(coords), vertex.color = g_7_clusters$membership, edge.arrow.mode = 0)
+#' plot(clust_out$spanning_forest,
+#'      layout = as.matrix(coords),
+#'      vertex.color = clust_out$membership,
+#'      edge.arrow.mode = 0)
+#' g_7_clusters = graphDeath(clust_out$spanning_forest,
+#'                           clust_out$membership,
+#'                           g)
+#' plot(g_7_clusters$graph,
+#'      layout = as.matrix(coords),
+#'      vertex.color = g_7_clusters$membership,
+#'      edge.arrow.mode = 0)
 graphDeath = function(graph, membership, full_graph) {
   # Test that membership is valid
   N = igraph::vcount(graph)
@@ -409,9 +431,16 @@ graphDeath = function(graph, membership, full_graph) {
 #' coords = data.frame(lon = rnorm(80), lat = rnorm(80))
 #' g = constructGraph(coords, 5)
 #' clust_out = constructClusters(g, 6, minclust = 8)
-#' plot(clust_out$spanning_forest, layout = as.matrix(coords), vertex.color = clust_out$membership, edge.arrow.mode = 0)
-#' g_different = graphChange(clust_out$spanning_forest, clust_out$membership, g)
-#' plot(g_different$graph, , layout = as.matrix(coords), vertex.color = g_different$membership, edge.arrow.mode = 0)
+#' plot(clust_out$spanning_forest,
+#'      layout = as.matrix(coords),
+#'      vertex.color = clust_out$membership,
+#'      edge.arrow.mode = 0)
+#' g_different = graphChange(clust_out$spanning_forest,
+#'                           clust_out$membership, g)
+#' plot(g_different$graph,
+#'      layout = as.matrix(coords),
+#'      vertex.color = g_different$membership,
+#'      edge.arrow.mode = 0)
 graphChange = function(graph, membership, full_graph) {
   # First, perform a cluster death operation
   dead_graph = graphDeath(graph, membership, full_graph)
@@ -455,9 +484,15 @@ graphChange = function(graph, membership, full_graph) {
 #' coords = data.frame(lon = rnorm(100), lat = rnorm(100))
 #' g = constructGraph(coords, 5)
 #' clust_out = constructClusters(g, 8, minclust = 6)
-#' plot(clust_out$spanning_forest, layout = as.matrix(coords), vertex.color = clust_out$membership, edge.arrow.mode = 0)
+#' plot(clust_out$spanning_forest,
+#'      layout = as.matrix(coords),
+#'      vertex.color = clust_out$membership,
+#'      edge.arrow.mode = 0)
 #' g_resample = graphHyper(g, clust_out$membership)
-#' plot(g_resample$graph, layout = as.matrix(coords), vertex.color = g_resample$membership, edge.arrow.mode = 0)
+#' plot(g_resample$graph,
+#'      layout = as.matrix(coords),
+#'      vertex.color = g_resample$membership,
+#'      edge.arrow.mode = 0)
 graphHyper = function(full_graph, membership) {
   # Test that membership is valid
   N = igraph::vcount(full_graph)
