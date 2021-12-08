@@ -15,8 +15,14 @@ To install this package, run the following code:
 
 ```
 install.packages("devtools")
-library(devtools)
-install_github("rayisaacalan/BASTION")
+devtools::install_github("rayisaacalan/BASTION", dependencies = TRUE)
+```
+
+To install this package and view its vignette, run the following code:
+
+```
+install.packages("devtools")
+devtools::install_github("rayisaacalan/BASTION", build_vignettes = TRUE, dependencies = TRUE, force = TRUE)
 ```
 
 The tasks for this semester are as follows:
@@ -24,7 +30,7 @@ The tasks for this semester are as follows:
   * ~~README~~
   * ~~Description~~
 - MCMC Vignette
-- R functions
+- ~~R functions~~
   * ~~Construct Graph (K nearest neighbors)~~
   * ~~Construct Clusters~~
   * ~~Edge Betweenness~~
@@ -33,7 +39,7 @@ The tasks for this semester are as follows:
   * ~~Death Operation~~
   * ~~Change Operation~~
   * ~~Hyper Operation~~
-- Documentation
+- ~~Documentation~~
   * ~~Roxygen skeleton (basic i/o)~~
   * ~~Detailed descriptions~~
   * ~~Examples~~
