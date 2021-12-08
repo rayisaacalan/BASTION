@@ -1,6 +1,6 @@
 Package: BASTION
 Title: Bayesian Additive Spanning Tree's Input / Output For Non-Parametric Regression
-Version: 0.0.0.9001
+Version: 0.1.0.0001
 Authors@R: 
     person(given = "Isaac",
            family = "Ray",
@@ -16,4 +16,4 @@ RoxygenNote: 7.1.2
 LinkingTo: 
     Rcpp
 Imports: 
-    Rcpp, igraph, cccd
+    Rcpp, igraph, cccd, stats

@@ -341,9 +341,9 @@ graphHyper = function(full_graph, membership) {
   #Initialize vector of weights
   weight = rep(0, igraph::ecount(full_graph))
   # Sample between cluster edge weights and assign them (uniform from 0.5 to 1)
-  weight[betweenness] = runif(length(between_edges), 0.5, 1)
+  weight[betweenness] = stats::runif(length(between_edges), 0.5, 1)
   # Sample within cluster edge weights and assign them (uniform from 0 to 0.5)
-  weight[!betweenness] = runif(length(within_edges), 0, 0.5)
+  weight[!betweenness] = stats::runif(length(within_edges), 0, 0.5)
   # Recalculate the MST
   minspantree = igraph::mst(full_graph, weights = weight)
   # Remove inter-cluster edges to recover original partition

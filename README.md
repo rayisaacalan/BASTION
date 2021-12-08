@@ -23,22 +23,17 @@ The tasks for this semester are as follows:
 - ~~Package skeleton~~
   * ~~README~~
   * ~~Description~~
-- C++ graph class / functions
-  * ~~Graph class (data structure, adjacency list)~~
-  * ~~Graph methods (subgraph, edge status, number of vertices/edges, add edge)~~
-  * Primitive graph functions (Prim's algorithm, ~~vertex connectedness~~)
-- C++ graph operations
-  * Birth move
-  * Death move
-  * Change move
-  * Hyper move
+- MCMC Vignette
 - R functions
   * ~~Construct Graph (K nearest neighbors)~~
-  * Construct Clusters
-- R wrappers
-  * Compatibility / input validity checks
-  * C++ function calls
+  * ~~Construct Clusters~~
+  * ~~Edge Betweenness~~
+  * ~~Cluster Isolation~~
+  * ~~Birth Operation~~
+  * ~~Death Operation~~
+  * ~~Change Operation~~
+  * ~~Hyper Operation~~
 - Documentation
   * ~~Roxygen skeleton (basic i/o)~~
   * Detailed descriptions
-  * Examples
+  * ~~Examples~~
