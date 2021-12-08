@@ -47,8 +47,8 @@ constructGraph = function(coordinates, k) {
 #' coords = data.frame(lon = rnorm(50), lat = rnorm(50))
 #' g = constructGraph(coords, 5)
 #' clust_membership = constructClusters(g, 6, minclust = 5)$membership
-#' betweeness = edgeBetweenClust(g, clust_membership)
-#' plot(g, layout = as.matrix(coords), edge.color = as.numeric(betweeness) + 1, edge.arrow.mode = 0)
+#' betweenness = edgeBetweenClust(g, clust_membership)
+#' plot(g, layout = as.matrix(coords), edge.color = as.numeric(betweenness) + 1, edge.arrow.mode = 0)
 edgeBetweenClust = function(graph, membership) {
   # Get a matrix of all edges in graph by numeric id (column 1 is source, column 2 is destination)
   edge_matrix = igraph::as_edgelist(graph, names = F)
@@ -175,6 +175,12 @@ constructClusters = function(graph, nclust, minclust = NULL) {
 #' @export
 #'
 #' @examples
+#' coords = data.frame(lon = rnorm(50), lat = rnorm(50))
+#' g = constructGraph(coords, 5)
+#' clust_out = constructClusters(g, 6, minclust = 5)
+#' plot(clust_out$spanning_forest, layout = as.matrix(coords), vertex.color = clust_out$membership, edge.arrow.mode = 0)
+#' g_7_clusters = graphBirth(clust_out$spanning_forest, clust_out$membership, 4)
+#' plot(g_7_clusters$graph, layout = as.matrix(coords), vertex.color = g_7_clusters$membership, edge.arrow.mode = 0)
 graphBirth = function(graph, membership, clust) {
   # Test that membership is valid
   N = igraph::vcount(graph)
