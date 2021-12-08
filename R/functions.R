@@ -239,7 +239,12 @@ constructClusters = function(graph, nclust, minclust = NULL) {
 
 #' Perform a cluster birth operation (split an existing cluster)
 #'
-#' @param graph An object of class 'graph' from the igraph package
+#' \code{graphBirth} takes in a spanning forest graph with k disconnected components corresponding to
+#' the vector of cluster assignments 'membership' and splits an existing cluster. Optionally, the integer corresponding
+#' to one of the clusters can be specified as the one to split. If it is not specified, a cluster is uniformly selected at random.
+#' In the specified or selected cluster, an edge is uniformly randomly selected and cut, turning the one cluster into two.
+#'
+#' @param graph An object of class 'graph' from the \code{\link[igraph]{igraph}} package
 #' @param membership A vector of integers of length N with k unique integers (k < N) which map each vertex to a cluster
 #' @param clust (Optional) Integer, the cluster to split. Must be between 1 and k. By default, a cluster will be uniformly randomly selected
 #'
@@ -247,6 +252,16 @@ constructClusters = function(graph, nclust, minclust = NULL) {
 #' \item{graph}{The input graph with 1 fewer active edge}
 #' \item{membership}{A vector of integers of length N with k + 1 unique integers which map each vertex to a cluster}
 #' @export
+#'
+#' @seealso
+#' \code{\link{constructClusters}}, \code{\link{graphDeath}}, \code{\link{graphChange}}, \code{\link{graphHyper}}
+#'
+#' @references
+#' Luo, Z.T. (*), Sang, H. and Mallick, B.K. (2021), BAST: Bayesian Additive Regression Spanning Trees
+#' for Complex Constrained Domain
+#'
+#' Luo, Z.T. (*), Sang, H. and Mallick, B.K. (2021), A Bayesian Contiguous Partitioning Method for
+#' Learning Clustered Latent Variables, Journal of Machine Learning Research, 22, 1-52.
 #'
 #' @examples
 #' set.seed(1234)
