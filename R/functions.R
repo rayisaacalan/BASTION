@@ -306,7 +306,7 @@ graphChange = function(graph, membership, full_graph) {
 
 #' Generate new spanning trees for each cluster
 #'
-#' @param graph An object of class 'graph' from the igraph package
+#' @param full_graph An object of class 'graph' from the igraph package
 #' @param membership  A vector of integers of length N with k unique integers (1 < k <= N) which map each vertex to a cluster
 #'
 #' @return A list containing two elements:
@@ -315,6 +315,39 @@ graphChange = function(graph, membership, full_graph) {
 #' @export
 #'
 #' @examples
-graphHyper = function(graph, membership) {
-
+#' set.seed(1)
+#' coords = data.frame(lon = rnorm(100), lat = rnorm(100))
+#' g = constructGraph(coords, 5)
+#' clust_out = constructClusters(g, 8, minclust = 6)
+#' plot(clust_out$spanning_forest, layout = as.matrix(coords), vertex.color = clust_out$membership, edge.arrow.mode = 0)
+#' g_resample = graphHyper(g, clust_out$membership)
+#' plot(g_resample$graph, layout = as.matrix(coords), vertex.color = g_resample$membership, edge.arrow.mode = 0)
+graphHyper = function(full_graph, membership) {
+  # Test that membership is valid
+  N = igraph::vcount(full_graph)
+  if(length(membership) != N) {
+    stop("membership is of incorrect length, should be same length as vcount of graph")
+  }
+  # Test that full_graph is connected
+  if(!igraph::is.connected(full_graph)) {
+    warning("full_graph is not connected; clusters could be incorrect")
+  }
+  # Get the vector of edge betweenness of the full graph
+  betweenness = edgeBetweenClust(full_graph, membership)
+  # Get the vector of edges which are in between clusters
+  between_edges = igraph::E(full_graph)[betweenness]
+  # Get the vector of edges which are within clusters
+  within_edges = igraph::E(full_graph)[!betweenness]
+  #Initialize vector of weights
+  weight = rep(0, igraph::ecount(full_graph))
+  # Sample between cluster edge weights and assign them (uniform from 0.5 to 1)
+  weight[betweenness] = runif(length(between_edges), 0.5, 1)
+  # Sample within cluster edge weights and assign them (uniform from 0 to 0.5)
+  weight[!betweenness] = runif(length(within_edges), 0, 0.5)
+  # Recalculate the MST
+  minspantree = igraph::mst(full_graph, weights = weight)
+  # Remove inter-cluster edges to recover original partition
+  resampled_graph = clusterGraph(minspantree, membership)
+  # Return updated graph and same membership
+  return(list(graph = resampled_graph, membership = membership))
 }
