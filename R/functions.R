@@ -223,7 +223,7 @@ graphBirth = function(graph, membership, clust) {
 #'
 #' @param graph An object of class 'graph' from the igraph package
 #' @param membership A vector of integers of length N with k unique integers (1 < k <= N) which map each vertex to a cluster
-#' @param clust Integer, the cluster to split. Must be between 1 and k
+#' @param full_graph An object of class 'graph' from the igraph package; 'graph' should be a subgraph of full_graph
 #'
 #' @return A list containing two elements:
 #' 'graph': The input graph with 1 additional active edge
@@ -231,8 +231,39 @@ graphBirth = function(graph, membership, clust) {
 #' @export
 #'
 #' @examples
-graphDeath = function(graph, membership, clust) {
-
+#' coords = data.frame(lon = rnorm(50), lat = rnorm(50))
+#' g = constructGraph(coords, 6)
+#' clust_out = constructClusters(g, 8, minclust = 3)
+#' plot(clust_out$spanning_forest, layout = as.matrix(coords), vertex.color = clust_out$membership, edge.arrow.mode = 0)
+#' g_7_clusters = graphDeath(clust_out$spanning_forest, clust_out$membership, g)
+#' plot(g_7_clusters$graph, layout = as.matrix(coords), vertex.color = g_7_clusters$membership, edge.arrow.mode = 0)
+graphDeath = function(graph, membership, full_graph) {
+  # Test that membership is valid
+  N = igraph::vcount(graph)
+  if(length(membership) != N) {
+    stop("membership is of incorrect length, should be same length as vcount of graph")
+  }
+  # Test that graph has the same number of vertices as full_graph
+  if(N != igraph::vcount(full_graph)) {
+    stop("graph does not have the same number of vertices as full_graph")
+  }
+  k = length(unique(membership))
+  # Test that k is valid
+  if(k <= 1) {
+    stop("Not enough clusters; need at least 2 clusters to be able to merge")
+  }
+  # Get a vector of which of the edges which are between the existing clusters
+  betweenness = edgeBetweenClust(full_graph, membership)
+  # Use betweenness to make a vector of the edges which are between clusters
+  between_edges = igraph::E(full_graph)[betweenness]
+  # Select one to return to the graph
+  returning_edge = sample(between_edges, 1)
+  # Add the edge back to graph
+  merged_graph = igraph::add_edges(graph, igraph::ends(full_graph, returning_edge))
+  # Update the membership of each cluster
+  merged_membership = igraph::components(merged_graph)$membership
+  # Return the updated graph and new membership
+  return(list(graph = merged_graph, membership = merged_membership))
 }
 
 #' Perform a cluster death operation followed by a cluster birth operation
