@@ -1,0 +1,65 @@
+---
+title: "MCMC"
+output: rmarkdown::html_vignette
+author: "Ray, Isaac"
+date: "December 2021"
+vignette: >
+  %\VignetteIndexEntry{MCMC}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(BASTION)
+library(ggplot2)
+library(ggraph)
+```
+
+```{r data-gen, fig.width = 6, fig.height = 6}
+set.seed(12345)
+x = runif(500, min = -10, max = 10)
+y = runif(500, min = -10, max = 10)
+data_full = data.frame(x, y)
+data_hole = data_full[x^2 + y^2 >= 16, ]
+ggplot(data_hole) + geom_point(aes(x, y))
+```
+
+```{r data-response, fig.width = 6, fig.height = 6}
+response = 1.2^(data_hole$x) + (data_hole$y)^2 - 5*(data_hole$x > data_hole$y) + 4*data_hole$x*data_hole$y
+ggplot(data_hole) + 
+  geom_point(aes(x, y, color = response)) +
+  scale_color_viridis()
+```
+
+```{r make-graph, fig.width = 6, fig.height = 6}
+hole_graph = constructGraph(data_hole, 5)
+ggraph(hole_graph, layout = data_hole) + 
+  geom_edge_link0(edge_alpha = 0.1) + 
+  geom_node_point(aes(color = response)) +
+  scale_color_viridis()
+```
+```{r make-cluster, fig.width = 6, fig.height = 6}
+clustered_output = constructClusters(hole_graph, nclust = 10)
+ggraph(clustered_output$spanning_forest, layout = data_hole) +
+  geom_edge_link0(edge_alpha = 0.1) +
+  geom_node_point(aes(colour = as.factor(clustered_output$membership))) +
+  scale_colour_brewer(palette = "Paired") + 
+  labs(colour = "Cluster")
+```
+
+```{r cluster-birth, fig.width = 6, fig.height = 6}
+birth_output = graphBirth(clustered_output$spanning_forest, clustered_output$membership, clust = 6)
+ggraph(birth_output$graph, layout = data_hole) +
+  geom_edge_link0(edge_alpha = 0.1) +
+  geom_node_point(aes(colour = as.factor(birth_output$membership))) +
+  scale_colour_brewer(palette = "Paired") + 
+  labs(colour = "Cluster")
+```
+
