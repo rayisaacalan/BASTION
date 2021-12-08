@@ -56,11 +56,23 @@ constructGraph = function(coordinates, k) {
 
 #' Get Betweenness of Edges in Clustered Graph
 #'
-#' @param graph An object of class 'graph' from the igraph package.
+#' \code{edgeBetweenClust} is a utility function which takes in a graph and the membership vector
+#' mapping each vertex to a certain cluster and returns a vector of boolean values. A value of 'TRUE'
+#' means that the corresponding edge in that edge list position connects vertices which belong to
+#' distinct clusters. A value of 'FALSE' means that the edge connects vertices which belong to the same
+#' cluster.
+#'
+#' @param graph An object of class 'graph' from the \code{\link[igraph]{igraph}} package.
 #' @param membership A vector of integers of length N (see \code{\link{constructClusters}})
 #'
 #' @return A vector of boolean values of length \code{ecount(graph)} where each TRUE value represents an edge that connects distinct clusters
 #' @export
+#' @references
+#' Luo, Z.T. (*), Sang, H. and Mallick, B.K. (2021), BAST: Bayesian Additive Regression Spanning Trees
+#' for Complex Constrained Domain
+#'
+#' Luo, Z.T. (*), Sang, H. and Mallick, B.K. (2021), A Bayesian Contiguous Partitioning Method for
+#' Learning Clustered Latent Variables, Journal of Machine Learning Research, 22, 1-52.
 #'
 #' @examples
 #' set.seed(1)
