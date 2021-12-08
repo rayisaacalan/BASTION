@@ -2,8 +2,12 @@
 #'
 #' \code{constructGraph} takes numeric data (currently it requires 2 dimensional data such as spatial data,
 #' this functionality will expand in a future update) and uses the K-Nearest Neighbors algorithm to
-#' construct a graph object from \code{\link[igraph]{igraph}}. The K-Nearest Neighbors implementation is from
+#' construct a weighted graph object from \code{\link[igraph]{igraph}}. The K-Nearest Neighbors implementation is from
 #' \code{\link[cccd]{cccd}}.
+#'
+#' Note: this function is not guaranteed to return a connected graph, and connectivity
+#' is highly recommended for graphs to be used in other functions. If the output graph is not connected,
+#' it is recommended to add more data points, increase k, or construct a graph manually.
 #'
 #' @param coordinates Data frame whose first 2 columns are numeric coordinate data
 #' @param k Integer, the parameter for the K-Nearest Neighbors algorithm
@@ -135,7 +139,18 @@ clusterGraph = function(graph, membership) {
 
 #' Construct a cluster membership list for a graph
 #'
-#' @param graph An object of class 'graph' from the igraph package. The graph must have weights for each edge
+#' \code{constructClusters} takes in a weighted and connected graph (see \code{\link{constructGraph}}), a number of clusters
+#' to assign the vertices of the graph to, and optionally the minimum number of vertices each cluster should contain.
+#' If \code{minclust} is not specified, by default it will try to ensure no cluster is more than 10 times larger than any other cluster.
+#' The method by which it assigns vertices to clusters is by using Prim's algorithm to find the minimum spanning tree
+#' of the graph and then randomly making \code{nclust - 1} cuts to result in \code{nclust} disconnected trees. The vertices connected
+#' by each tree are assigned to the same cluster, and the collection of these trees is returned as \code{spanning_forest}.
+#'
+#' Note that it is possible that after 100 different uniform random edge samples, no spanning forest meets the criteria
+#' of the parameters (namely, not every cluster contains \code{minclust} elements). If this is the case a warning message
+#' will be generated, but the algorithm will still proceed to assign cluster memberships as best it can.
+#'
+#' @param graph An object of class 'graph' from the \code{\link[igraph]{igraph}} package. The graph must have weights for each edge
 #' @param nclust An integer, the number of different clusters to assign points to. Must be at most N (the number of vertices in graph)
 #' @param minclust An integer, the smallest allowable cluster size. By default, one-tenth the ratio of vertices to nclust.
 #'
@@ -144,6 +159,13 @@ clusterGraph = function(graph, membership) {
 #' \item{spanning_forest}{The input graph with inter-cluster edges removed, and every cluster induced subgraph is a spanning tree}
 #' \item{membership}{A vector of integers of length N with nclust unique integers which map each vertex to a cluster}
 #' @export
+#'
+#' @references
+#' Luo, Z.T. (*), Sang, H. and Mallick, B.K. (2021), BAST: Bayesian Additive Regression Spanning Trees
+#' for Complex Constrained Domain
+#'
+#' Luo, Z.T. (*), Sang, H. and Mallick, B.K. (2021), A Bayesian Contiguous Partitioning Method for
+#' Learning Clustered Latent Variables, Journal of Machine Learning Research, 22, 1-52.
 #'
 #' @examples
 #' set.seed(1)
