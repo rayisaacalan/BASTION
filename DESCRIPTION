@@ -18,8 +18,5 @@ LinkingTo:
 Imports: 
     Rcpp, igraph, cccd, stats
 Suggests: 
-    rmarkdown,
-    knitr,
-    ggplot2,
-    ggraph
+    rmarkdown, knitr, ggplot2, ggraph
 VignetteBuilder: knitr
