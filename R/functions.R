@@ -167,7 +167,7 @@ constructClusters = function(graph, nclust, minclust = NULL) {
 #'
 #' @param graph An object of class 'graph' from the igraph package
 #' @param membership A vector of integers of length N with k unique integers (k < N) which map each vertex to a cluster
-#' @param clust Integer, the cluster to split. Must be between 1 and k
+#' @param clust (Optional) Integer, the cluster to split. Must be between 1 and k. By default, a cluster will be uniformly randomly selected
 #'
 #' @return A list containing two elements:
 #' 'graph': The input graph with 1 fewer active edge
@@ -181,14 +181,18 @@ constructClusters = function(graph, nclust, minclust = NULL) {
 #' plot(clust_out$spanning_forest, layout = as.matrix(coords), vertex.color = clust_out$membership, edge.arrow.mode = 0)
 #' g_7_clusters = graphBirth(clust_out$spanning_forest, clust_out$membership, 4)
 #' plot(g_7_clusters$graph, layout = as.matrix(coords), vertex.color = g_7_clusters$membership, edge.arrow.mode = 0)
-graphBirth = function(graph, membership, clust) {
+graphBirth = function(graph, membership, clust = NULL) {
   # Test that membership is valid
   N = igraph::vcount(graph)
   if(length(membership) != N) {
     stop("membership is of incorrect length, should be same length as vcount of graph")
   }
-  # Test that clust is valid
+  # If clust is NULL, uniformly pick a random cluster
   k = length(unique(membership))
+  if(is.null(clust)) {
+    clust = sample(1:k, 1)
+  }
+  # Test that clust is valid
   if(clust > k || clust < 1) {
     stop("Invalid cluster to split, should be an integer between 1 and k")
   }
