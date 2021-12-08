@@ -274,6 +274,7 @@ graphDeath = function(graph, membership, full_graph) {
 #'
 #' @param graph An object of class 'graph' from the igraph package
 #' @param membership A vector of integers of length N with k unique integers (1 < k <= N) which map each vertex to a cluster
+#' @param full_graph An object of class 'graph' from the igraph package; 'graph' should be a subgraph of full_graph
 #'
 #' @return A list containing two elements:
 #' 'graph': The input graph with the different set of active edges
@@ -281,8 +282,19 @@ graphDeath = function(graph, membership, full_graph) {
 #' @export
 #'
 #' @examples
-graphChange = function(graph, membership) {
-
+#' coords = data.frame(lon = rnorm(80), lat = rnorm(80))
+#' g = constructGraph(coords, 5)
+#' clust_out = constructClusters(g, 6, minclust = 8)
+#' plot(clust_out$spanning_forest, layout = as.matrix(coords), vertex.color = clust_out$membership, edge.arrow.mode = 0)
+#' g_different = graphChange(clust_out$spanning_forest, clust_out$membership, g)
+#' plot(g_different$graph, , layout = as.matrix(coords), vertex.color = g_different$membership, edge.arrow.mode = 0)
+graphChange = function(graph, membership, full_graph) {
+  # First, perform a cluster death operation
+  dead_graph = graphDeath(graph, membership, full_graph)
+  # Then, perform a birth operation
+  reborn_graph = graphBirth(dead_graph$graph, dead_graph$membership)
+  # Return the result
+  return(list(graph = reborn_graph$graph, membership = reborn_graph$membership))
 }
 
 #' Generate new spanning trees for each cluster
