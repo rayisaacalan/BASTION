@@ -13,8 +13,8 @@ graphHyper(full_graph, membership)
 }
 \value{
 A list containing two elements:
-'graph': The input graph with each cluster having a new minimum spanning tree based on resampled edge weights
-'membership': A vector of integers of length N with k unique integers which map each vertex to a cluster
+\item{graph}{The input graph with each cluster having a new minimum spanning tree based on resampled edge weights}
+\item{membership}{A vector of integers of length N with k unique integers which map each vertex to a cluster}
 }
 \description{
 Generate new spanning trees for each cluster

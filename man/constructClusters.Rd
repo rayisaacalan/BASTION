@@ -14,10 +14,10 @@ constructClusters(graph, nclust, minclust = NULL)
 \item{minclust}{An integer, the smallest allowable cluster size. By default, one-tenth the ratio of vertices to nclust.}
 }
 \value{
-A list containing two elements:
-'clustered_graph': The input graph with inter-cluster edges removed
-'spanning_forest': The input graph with inter-cluster edges removed, and every cluster induced subgraph is a spanning tree
-'membership': A vector of integers of length N with nclust unique integers which map each vertex to a cluster
+A list containing three elements:
+\item{clustered_graph}{The input graph with inter-cluster edges removed}
+\item{spanning_forest}{The input graph with inter-cluster edges removed, and every cluster induced subgraph is a spanning tree}
+\item{membership}{A vector of integers of length N with nclust unique integers which map each vertex to a cluster}
 }
 \description{
 Construct a cluster membership list for a graph

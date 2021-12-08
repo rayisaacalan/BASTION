@@ -15,8 +15,8 @@ graphBirth(graph, membership, clust = NULL)
 }
 \value{
 A list containing two elements:
-'graph': The input graph with 1 fewer active edge
-'membership': A vector of integers of length N with k + 1 unique integers which map each vertex to a cluster
+\item{graph}{The input graph with 1 fewer active edge}
+\item{membership}{A vector of integers of length N with k + 1 unique integers which map each vertex to a cluster}
 }
 \description{
 Perform a cluster birth operation (split an existing cluster)

@@ -98,10 +98,10 @@ clusterGraph = function(graph, membership) {
 #' @param nclust An integer, the number of different clusters to assign points to. Must be at most N (the number of vertices in graph)
 #' @param minclust An integer, the smallest allowable cluster size. By default, one-tenth the ratio of vertices to nclust.
 #'
-#' @return A list containing two elements:
-#' 'clustered_graph': The input graph with inter-cluster edges removed
-#' 'spanning_forest': The input graph with inter-cluster edges removed, and every cluster induced subgraph is a spanning tree
-#' 'membership': A vector of integers of length N with nclust unique integers which map each vertex to a cluster
+#' @return A list containing three elements:
+#' \item{clustered_graph}{The input graph with inter-cluster edges removed}
+#' \item{spanning_forest}{The input graph with inter-cluster edges removed, and every cluster induced subgraph is a spanning tree}
+#' \item{membership}{A vector of integers of length N with nclust unique integers which map each vertex to a cluster}
 #' @export
 #'
 #' @examples
@@ -181,8 +181,8 @@ constructClusters = function(graph, nclust, minclust = NULL) {
 #' @param clust (Optional) Integer, the cluster to split. Must be between 1 and k. By default, a cluster will be uniformly randomly selected
 #'
 #' @return A list containing two elements:
-#' 'graph': The input graph with 1 fewer active edge
-#' 'membership': A vector of integers of length N with k + 1 unique integers which map each vertex to a cluster
+#' \item{graph}{The input graph with 1 fewer active edge}
+#' \item{membership}{A vector of integers of length N with k + 1 unique integers which map each vertex to a cluster}
 #' @export
 #'
 #' @examples
@@ -242,8 +242,8 @@ graphBirth = function(graph, membership, clust = NULL) {
 #' @param full_graph An object of class 'graph' from the igraph package; 'graph' should be a subgraph of full_graph
 #'
 #' @return A list containing two elements:
-#' 'graph': The input graph with 1 additional active edge
-#' 'membership': A vector of integers of length N with k - 1 unique integers which map each vertex to a cluster
+#' \item{graph}{The input graph with 1 additional active edge}
+#' \item{membership}{A vector of integers of length N with k - 1 unique integers which map each vertex to a cluster}
 #' @export
 #'
 #' @examples
@@ -290,8 +290,8 @@ graphDeath = function(graph, membership, full_graph) {
 #' @param full_graph An object of class 'graph' from the igraph package; 'graph' should be a subgraph of full_graph
 #'
 #' @return A list containing two elements:
-#' 'graph': The input graph with the different set of active edges
-#' 'membership': A vector of integers of length N with k unique integers which map each vertex to a cluster, likely different than input membership
+#' \item{graph}{The input graph with the different set of active edges}
+#' \item{membership}{A vector of integers of length N with k unique integers which map each vertex to a cluster, likely different than input membership}
 #' @export
 #'
 #' @examples
@@ -317,8 +317,8 @@ graphChange = function(graph, membership, full_graph) {
 #' @param membership  A vector of integers of length N with k unique integers (1 < k <= N) which map each vertex to a cluster
 #'
 #' @return A list containing two elements:
-#' 'graph': The input graph with each cluster having a new minimum spanning tree based on resampled edge weights
-#' 'membership': A vector of integers of length N with k unique integers which map each vertex to a cluster
+#' \item{graph}{The input graph with each cluster having a new minimum spanning tree based on resampled edge weights}
+#' \item{membership}{A vector of integers of length N with k unique integers which map each vertex to a cluster}
 #' @export
 #'
 #' @examples

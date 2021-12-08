@@ -15,8 +15,8 @@ graphChange(graph, membership, full_graph)
 }
 \value{
 A list containing two elements:
-'graph': The input graph with the different set of active edges
-'membership': A vector of integers of length N with k unique integers which map each vertex to a cluster, likely different than input membership
+\item{graph}{The input graph with the different set of active edges}
+\item{membership}{A vector of integers of length N with k unique integers which map each vertex to a cluster, likely different than input membership}
 }
 \description{
 Perform a cluster death operation followed by a cluster birth operation
