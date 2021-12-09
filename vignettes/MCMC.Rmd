@@ -20,6 +20,7 @@ knitr::opts_chunk$set(
 library(BASTION)
 library(ggplot2)
 library(ggraph)
+library(igraph)
 ```
 
 ```{r data-gen, fig.width = 6, fig.height = 6}
@@ -45,6 +46,7 @@ ggraph(hole_graph, layout = data_hole) +
   geom_node_point(aes(color = response)) +
   scale_color_viridis()
 ```
+
 ```{r make-cluster, fig.width = 6, fig.height = 6}
 clustered_output = constructClusters(hole_graph, nclust = 10)
 ggraph(clustered_output$spanning_forest, layout = data_hole) +
@@ -55,11 +57,130 @@ ggraph(clustered_output$spanning_forest, layout = data_hole) +
 ```
 
 ```{r cluster-birth, fig.width = 6, fig.height = 6}
-birth_output = graphBirth(clustered_output$spanning_forest, clustered_output$membership, clust = 6)
+birth_output = graphBirth(clustered_output$spanning_forest, clustered_output$membership, clust = 7)
 ggraph(birth_output$graph, layout = data_hole) +
   geom_edge_link0(edge_alpha = 0.1) +
   geom_node_point(aes(colour = as.factor(birth_output$membership))) +
   scale_colour_brewer(palette = "Paired") + 
   labs(colour = "Cluster")
 ```
+
+```{r cluster-death, fig.width = 6, fig.height = 6}
+death_output = graphDeath(birth_output$graph, birth_output$membership, hole_graph)
+ggraph(death_output$graph, layout = data_hole) +
+  geom_edge_link0(edge_alpha = 0.1) +
+  geom_node_point(aes(colour = as.factor(death_output$membership))) +
+  scale_colour_brewer(palette = "Paired") + 
+  labs(colour = "Cluster")
+```
+
+```{r cluster-change, fig.width = 6, fig.height = 6}
+change_output = graphChange(death_output$graph, death_output$membership, hole_graph)
+ggraph(change_output$graph, layout = data_hole) +
+  geom_edge_link0(edge_alpha = 0.1) +
+  geom_node_point(aes(colour = as.factor(change_output$membership))) +
+  scale_colour_brewer(palette = "Paired") + 
+  labs(colour = "Cluster")
+```
+
+Subtle change in groups 3, 9, 10
+
+```{r cluster-hyper, fig.width = 6, fig.height = 6}
+hyper_output = graphHyper(hole_graph, change_output$membership)
+ggraph(hyper_output$graph, layout = data_hole) +
+  geom_edge_link0(edge_alpha = 0.1) +
+  geom_node_point(aes(colour = as.factor(hyper_output$membership))) +
+  scale_colour_brewer(palette = "Paired") + 
+  labs(colour = "Cluster")
+```
+
+Let's put it all together in a very simple estimation procedure. Suppose we want to try and estimate the response function as piecewise constant over the domain. Our estimate for the piecewise constant of each cluster will be the mean of the response at the cluster's member vertices, and the per-cluster error will be the sum of squared difference between each response and our estimate. We'll assess the total error of our graph by summing the error of each cluster, and penalize the number of clusters by adding a scaled exponential function of the number of clusters to the total error.
+
+```{r estimation-functions}
+estimation_procedure = function(membership, response) {
+  k = length(unique(membership))
+  estimates = rep(0, k)
+  errors = rep(0, k)
+  point_estimates = rep(0, length(membership))
+  for(i in 1:k) {
+    estimates[i] = mean(response[membership == i])
+    errors[i] = sum((response[membership == i] - estimates[i])^2)
+    point_estimates[membership == i] = estimates[i]
+  }
+  total_penalty = sum(errors) + (exp(k)/length(membership))
+  return(list(total_penalty = total_penalty, errors = errors, estimates = estimates, point_estimates = point_estimates))
+}
+```
+
+Now, we'll repeatedly execute the 4 different graph operations on our original ```hole_graph``` with different probabilities. We can arbitrarily choose these probabilities; let's choose a 2/5 chance for a birth move, 2/5 for a death move, and 1/10 each for a hyper move or change move. In every iteration, we will select a move with the probabilities mentioned, evaluate if the error increases or decreases, and accept the new graph if its error decreased. Note that since edges play no role in our procedure, a hyper move will always be accepted as it does not affect the total penalty. 
+
+```{r big-loop}
+iterations = 500
+current_graph = clustered_output$spanning_forest
+current_membership = clustered_output$membership
+current_loss = estimation_procedure(current_membership, response)$total_penalty
+for(i in 1:500) {
+  move = sample(1:4, 1, prob = c(0.4, 0.4, 0.1, 0.1))
+  if(move == 1) {
+    proposed_output = graphBirth(current_graph, current_membership)
+    proposed_estimation = estimation_procedure(proposed_output$membership, response)
+    if(proposed_estimation$total_penalty <= current_loss) {
+      current_graph = proposed_output$graph
+      current_membership = proposed_output$membership
+      current_loss = proposed_estimation$total_penalty
+    }
+  } else if(move == 2) {
+    proposed_output = graphDeath(current_graph, current_membership, hole_graph)
+    proposed_estimation = estimation_procedure(proposed_output$membership, response)
+    if(proposed_estimation$total_penalty <= current_loss) {
+      current_graph = proposed_output$graph
+      current_membership = proposed_output$membership
+      current_loss = proposed_estimation$total_penalty
+    }
+  } else if(move == 3) {
+    proposed_output = graphChange(current_graph, current_membership, hole_graph)
+    proposed_estimation = estimation_procedure(proposed_output$membership, response)
+    if(proposed_estimation$total_penalty <= current_loss) {
+      current_graph = proposed_output$graph
+      current_membership = proposed_output$membership
+      current_loss = proposed_estimation$total_penalty
+    }
+  } else if(move == 4) {
+    proposed_output = graphHyper(hole_graph, current_membership)
+    current_graph = proposed_output$graph
+    current_membership = proposed_output$membership
+  }
+}
+final_graph = current_graph
+final_membership = current_membership
+final_estimation_output = estimation_procedure(current_membership, response)
+final_loss = final_estimation_output$total_penalty
+final_errors = final_estimation_output$errors
+```
+
+Let's see how our estimation did. As a reminder, here is our original graph:
+```{r original-graph, fig.width = 6, fig.height = 6}
+ggraph(hole_graph, layout = data_hole) + 
+  geom_edge_link0(edge_alpha = 0.1) + 
+  geom_node_point(aes(color = response)) +
+  scale_color_viridis() +
+  labs(color = "Response")
+```
+
+And here are our final estimates:
+```{r estimate-graph, fig.width = 7, fig.height = 6}
+final_point_estimates = final_estimation_output$point_estimates
+ggraph(final_graph, layout = data_hole) + 
+  geom_edge_link0(edge_alpha = 0.1) + 
+  geom_node_point(aes(color = final_point_estimates)) +
+  scale_color_viridis() +
+  labs(color = "Response Estimate")
+```
+
+
+
+
+
+
+
 
