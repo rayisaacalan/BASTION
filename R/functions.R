@@ -291,20 +291,20 @@ graphBirth = function(graph, membership, clust = NULL) {
   if(length(membership) != N) {
     stop("membership is of incorrect length, should be same length as vcount of graph")
   }
-  # If clust is NULL, uniformly pick a random cluster
   k = length(unique(membership))
+  # Test that k is valid
+  if(k >= N) {
+    stop("Not enough vertices in graph to generate a new cluster")
+  }
+  # If clust is NULL, uniformly pick a random cluster
   if(is.null(clust)) {
     # Exclude clusters which only have one vertex
-    valid_clusts = (1:k)[-which(components(graph)$csize == 1)]
+    valid_clusts = (1:k)[which(components(graph)$csize > 1)]
     clust = sample(valid_clusts, 1)
   }
   # Test that clust is valid
   if(clust > k || clust < 1) {
     stop("Invalid cluster to split, should be an integer between 1 and k")
-  }
-  # Test that k is valid
-  if(k >= N) {
-    stop("Not enough vertices in graph to generate a new cluster")
   }
   # Get the vertex (keys) which belong to clust from membership
   ids_by_cluster = split(1:N, membership)
