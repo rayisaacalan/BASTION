@@ -23,7 +23,13 @@ library(ggraph)
 library(igraph)
 ```
 
-The purpose of this vignette is to demonstrate how the core functions of the `BASTION` package work individually, and then give a simple example of how they can be combined to predict responses at new data points.
+The Bayesian Additive Regression Spanning Trees model (BAST) is a novel ensemble model for non-parametric regression intended to be used on data (especially spatial) that lies on a complex or constrained domain, or a space with irregular shape embedded in Euclidean space. At the core of the BAST model is a novel weak learner; a random spanning tree manifold partition model. The model is based upon 4 possible moves/graph operations: birth, death, change, and hyper. The `BASTION` package implements those 4 core graph operations as well as some utility functions to make it easier to utilize them.
+
+The purpose of this vignette is to:
+
+  1. Provide a motivating example problem using synthetic data
+  2. Demonstrate how the core functions of the `BASTION` package work individually on the data
+  3. Give a simple example of how the core functions can be combined to predict responses at testing data
 
 # The Data & Motivation
 
