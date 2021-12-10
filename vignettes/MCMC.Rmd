@@ -29,18 +29,22 @@ library(igraph)
 
 ```{r data-gen, fig.width = 6, fig.height = 6}
 set.seed(12345)
-x = runif(500, min = -10, max = 10)
-y = runif(500, min = -10, max = 10)
+x = runif(1000, min = -10, max = 10)
+y = runif(1000, min = -10, max = 10)
 data_full = data.frame(x, y)
 data_hole = data_full[x^2 + y^2 >= 16, ]
 ggplot(data_hole) + geom_point(aes(x, y))
 ```
 
-```{r data-response, fig.width = 6, fig.height = 6}
+```{r data-response, include=FALSE}
 response = 1.2^(data_hole$x) + 
   (data_hole$y)^2 - 
   5*(data_hole$x > data_hole$y) + 
   4*data_hole$x*data_hole$y
+
+```
+
+```{r response-plot, fig.width = 6, fig.height = 6}
 ggplot(data_hole) + 
   geom_point(aes(x, y, color = response)) +
   scale_color_viridis()
@@ -72,7 +76,7 @@ ggraph(clustered_output$spanning_forest, layout = data_hole) +
 ## Birth Move
 
 ```{r cluster-birth, fig.width = 6, fig.height = 6}
-birth_output = graphBirth(clustered_output$spanning_forest, clustered_output$membership, clust = 7)
+birth_output = graphBirth(clustered_output$spanning_forest, clustered_output$membership, clust = 1)
 ggraph(birth_output$graph, layout = data_hole) +
   geom_edge_link0(edge_alpha = 0.1) +
   geom_node_point(aes(colour = as.factor(birth_output$membership))) +
@@ -141,7 +145,7 @@ estimation_procedure = function(membership, response) {
 Now, we'll repeatedly execute the 4 different graph operations on our original ```hole_graph``` with different probabilities. We can arbitrarily choose these probabilities; let's choose a 2/5 chance for a birth move, 2/5 for a death move, and 1/10 each for a hyper move or change move. In every iteration, we will select a move with the probabilities mentioned, evaluate if the error increases or decreases, and accept the new graph if its error decreased. Note that since edges play no role in our procedure, a hyper move will always be accepted as it does not affect the total penalty. 
 
 ```{r big-loop}
-iterations = 500
+iterations = 2000
 current_graph = clustered_output$spanning_forest
 current_membership = clustered_output$membership
 current_loss = estimation_procedure(current_membership, response)$total_penalty
