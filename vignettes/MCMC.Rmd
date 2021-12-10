@@ -130,6 +130,8 @@ As we can see from the plot above, when compared with the plot from the birth mo
 
 ## Change Move
 
+A change cluster move is simply the combination of a death move followed by a birth move. The `graphChange` function, when provided with a clustered spanning forest graph, corresponding membership, and the original full graph, will kill a random cluster then birth a new one. The motivation for this is to encourage faster cluster movement and discourage the graph from settling into a local 'optimum' which a single death or birth move alone would be unlikely to remove it from.
+
 ```{r cluster-change, fig.width = 6, fig.height = 6}
 change_output = graphChange(death_output$graph, death_output$membership, hole_graph)
 ggraph(change_output$graph, layout = data_hole) +
@@ -139,9 +141,13 @@ ggraph(change_output$graph, layout = data_hole) +
   labs(colour = "Cluster")
 ```
 
-Subtle change in groups 3, 9, 10
+As we can see from the plot above, when compared with the plot from the death move, the previous cluster 5 is killed by merging with cluster 2, then cluster 3 birthed a new cluster 10.
 
 ## Hyper Move
+
+The final core move is a hyper cluster move, performed by the `graphHyper` function. In a hyper cluster move, every edge from the original graph that connects vertices belonging to the same cluster is randomly assigned a new weight from a $\textrm{Unif}(0,0.5)$ distribution. Every edge from the original graph that connects vertices belonging to different clusters is randomly assigned a new weight from a $\textrm{Unif}(0.5,1)$ distribution. Then, a new minimum spanning tree across the entire original graph is created using Prim's algorithm. Finally, all the edges which connect different clusters are removed.
+
+The end result is a graph that has the same cluster membership for each vertex, but a different set of active edges comprising each tree in the spanning forest. This is beneficial because it changes the available edges that could be deleted in a birth move.
 
 ```{r cluster-hyper, fig.width = 6, fig.height = 6}
 hyper_output = graphHyper(hole_graph, change_output$membership)
@@ -152,9 +158,15 @@ ggraph(hyper_output$graph, layout = data_hole) +
   labs(colour = "Cluster")
 ```
 
+As we can see from the plot above, when compared with the plot from the change move, every vertex belongs to the same cluster (the membership is unchanged), but the set of edges connecting the vertices within each cluster is different.
+
 # Simulation Study
 
-Let's put it all together in a very simple estimation procedure. Suppose we want to try and estimate the response function as piecewise constant over the domain. Our estimate for the piecewise constant of each cluster will be the mean of the response at the cluster's member vertices, and the per-cluster error will be the sum of squared difference between each response and our estimate. We'll assess the total error of our graph by summing the error of each cluster, and penalize the number of clusters by adding a scaled exponential function of the number of clusters to the total error.
+We now have all the necessary building blocks to formulate a method for predicting the value of our response at new data points. We will use the response data that our spaghettified space surveyors gathered to train our model, then use that model for prediction.
+
+So, let's put it all together in a very simple estimation procedure. Suppose we want to try and approximate the response as a piecewise constant function over the domain. Our estimate for the piecewise constant of each cluster will be the mean of the response at the cluster's member vertices, and the per-cluster error will be the sum of squared difference between each response and our estimate. We'll assess the total error of our graph by summing the error of each cluster, and penalize the number of clusters by adding a scaled exponential function of the number of clusters to the total error.
+
+Note that the choices we are making here are practically arbitrary; there are lots of valid choices for what loss and penalty functions to use as well as different ways to approximate the response using the clusters. Different choices will lead to different performance characteristics and theoretical guarantees; these choices were made because they are simple to demonstrate. The performance and theory of these different choices is an area of ongoing research.
 
 ```{r estimation-functions}
 estimation_procedure = function(membership, response) {
@@ -175,7 +187,9 @@ estimation_procedure = function(membership, response) {
 }
 ```
 
-Now, we'll repeatedly execute the 4 different graph operations on our original ```hole_graph``` with different probabilities. We can arbitrarily choose these probabilities; let's choose a 2/5 chance for a birth move, 2/5 for a death move, and 1/10 each for a hyper move or change move. In every iteration, we will select a move with the probabilities mentioned, evaluate if the error increases or decreases, and accept the new graph if its error decreased. Note that since edges play no role in our procedure, a hyper move will always be accepted as it does not affect the total penalty. 
+Now, we'll repeatedly execute the 4 different graph operations on our original ```hole_graph``` with different probabilities. We can again arbitrarily choose these probabilities; let's choose a 2/5 chance for a birth move, 2/5 for a death move, and 1/10 each for a hyper move or change move. In every iteration, we will select a move with the probabilities mentioned, evaluate if the error increases or decreases, and accept the new graph if its error decreased. 
+
+Note that since edges play no role in our procedure, a hyper move will always be accepted as it does not affect the total penalty. As above, this way of determining whether to accept a new graph is neither the only way nor necessarily the best; it is chosen for simplicity.
 
 ```{r big-loop}
 iterations = 2000
@@ -217,11 +231,12 @@ for(i in 1:iterations) {
 final_graph = current_graph
 final_membership = current_membership
 final_estimation_output = estimation_procedure(current_membership, response)
-final_loss = final_estimation_output$total_penalty
+final_penalty = final_estimation_output$total_penalty
 final_errors = final_estimation_output$errors
 ```
 
 Let's see how our estimation did. As a reminder, here is our original graph:
+
 ```{r original-graph, fig.width = 6, fig.height = 6}
 ggraph(hole_graph, layout = data_hole) + 
   geom_edge_link0(edge_alpha = 0.1) + 
@@ -230,7 +245,8 @@ ggraph(hole_graph, layout = data_hole) +
   labs(color = "Response")
 ```
 
-And here are our final estimates:
+And here is our model, the piecewise constant approximation:
+
 ```{r estimate-graph, fig.width = 7, fig.height = 6}
 final_point_estimates = final_estimation_output$point_estimates
 ggraph(final_graph, layout = data_hole) + 
@@ -239,6 +255,8 @@ ggraph(final_graph, layout = data_hole) +
   scale_color_viridis() +
   labs(color = "Response Estimate")
 ```
+
+
 
 ## Predicting on Test Data
 
