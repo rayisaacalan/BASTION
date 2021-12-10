@@ -11,6 +11,9 @@ parallel to Euclidean axes. At the core of the BAST model is a novel weak learne
 manifold partition model. The model is based upon 4 possible moves/graph operations which will eventually
 comprise a tailored backfitting Markov chain Monte Carlo algorithm.
 
+This package implements those 4 possible graph operations as well as some utility functions to make it easier to
+utilize them.
+
 To install this package, run the following code:
 
 ```
@@ -23,23 +26,20 @@ To install this package and view its vignette, run the following code:
 ```
 install.packages("devtools")
 devtools::install_github("rayisaacalan/BASTION", build_vignettes = TRUE, dependencies = TRUE, force = TRUE)
+library(BASTION)
+vignette("MCMC", package = "BASTION")
+```
+To get started with a simple clustered graph, try the following:
+
+```
+set.seed(1)
+coords = data.frame(lon = rnorm(50), lat = rnorm(50))
+g = constructGraph(coords, 4)
+clust_out = constructClusters(g, 5, minclust = 3)
+plot(clust_out$spanning_forest,
+     layout = as.matrix(coords),
+     vertex.color = clust_out$membership,
+     edge.arrow.mode = 0)
 ```
 
-The tasks for this semester are as follows:
-- ~~Package skeleton~~
-  * ~~README~~
-  * ~~Description~~
-- MCMC Vignette
-- ~~R functions~~
-  * ~~Construct Graph (K nearest neighbors)~~
-  * ~~Construct Clusters~~
-  * ~~Edge Betweenness~~
-  * ~~Cluster Isolation~~
-  * ~~Birth Operation~~
-  * ~~Death Operation~~
-  * ~~Change Operation~~
-  * ~~Hyper Operation~~
-- ~~Documentation~~
-  * ~~Roxygen skeleton (basic i/o)~~
-  * ~~Detailed descriptions~~
-  * ~~Examples~~
+
