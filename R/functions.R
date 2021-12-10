@@ -254,6 +254,8 @@ constructClusters = function(graph, nclust, minclust = NULL) {
 #' @param membership A vector of integers of length N with k unique integers (k < N) which map each vertex to a cluster
 #' @param clust (Optional) Integer, the cluster to split. Must be between 1 and k. By default, a cluster will be uniformly randomly selected
 #'
+#' @importFrom igraph %--%
+#'
 #' @return A list containing two elements:
 #' \item{graph}{The input graph with 1 fewer active edge}
 #' \item{membership}{A vector of integers of length N with k + 1 unique integers which map each vertex to a cluster}
@@ -299,7 +301,7 @@ graphBirth = function(graph, membership, clust = NULL) {
   # If clust is NULL, uniformly pick a random cluster
   if(is.null(clust)) {
     # Exclude clusters which only have one vertex
-    valid_clusts = (1:k)[which(components(graph)$csize > 1)]
+    valid_clusts = (1:k)[which(igraph::components(graph)$csize > 1)]
     clust = sample(valid_clusts, 1)
   }
   # Test that clust is valid
