@@ -93,7 +93,14 @@ ggraph(clustered_output$spanning_forest, layout = data_hole) +
 
 # Graph Operations
 
+Now that we have a graph with clusters, we can demonstrate each of the four graph operations which are the core of the `BASTION` package.
+
 ## Birth Move
+
+First, we will consider a cluster birth move. The `graphBirth` function, when provided with a clustered spanning forest graph and corresponding membership (`spanning_forest` and `membership` from the `constructClusters` output), will pick a random edge from the cluster indexed by `clust` and delete it. By deleting this edge, it splits the tree and creates an additional cluster and we say that a cluster is 'born'.
+
+Note that `clust` is an optional parameter; cluster 1 was chosen for demonstration since in this example it happened to be the largest cluster. In practice `clust` is generally not specified, in which case a cluster is chosen at random from the existing clusters with at least one edge.
+
 
 ```{r cluster-birth, fig.width = 6, fig.height = 6}
 birth_output = graphBirth(clustered_output$spanning_forest, clustered_output$membership, clust = 1)
@@ -104,7 +111,11 @@ ggraph(birth_output$graph, layout = data_hole) +
   labs(colour = "Cluster")
 ```
 
+As we can see from the plot above, when compared with the original spanning forest graph, the original cluster 1 was split into the above clusters 1 and 3.
+
 ## Death Move
+
+Next, we will consider the opposite of a cluster birth move: a cluster death move. The `graphDeath` function, when provided with a clustered spanning forest graph, corresponding membership, and the *original full graph* (`hole_graph` in this example), will randomly select an edge from the original graph which connects two clusters and add it back to the graph. In doing so, the two clusters that are connected become a single cluster and we say that a cluster has 'died'.
 
 ```{r cluster-death, fig.width = 6, fig.height = 6}
 death_output = graphDeath(birth_output$graph, birth_output$membership, hole_graph)
@@ -114,6 +125,8 @@ ggraph(death_output$graph, layout = data_hole) +
   scale_colour_brewer(palette = "Paired") + 
   labs(colour = "Cluster")
 ```
+
+As we can see from the plot above, when compared with the plot from the birth move, the cluster which was born was subsequently killed (such is life for a cluster) and we are back to the original spanning forest we started with.
 
 ## Change Move
 
