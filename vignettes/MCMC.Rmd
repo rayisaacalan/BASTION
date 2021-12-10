@@ -203,8 +203,45 @@ ggraph(final_graph, layout = data_hole) +
   labs(color = "Response Estimate")
 ```
 
+## Predicting on Test Data
+
+```{r prediction}
+test_x = runif(500, min = -10, max = 10)
+test_y = runif(500, min = -10, max = 10)
+test_data_full = data.frame(x = test_x, y =  test_y)
+test_data_hole = test_data_full[test_x^2 + test_y^2 >= 16, ]
+test_response = 1.2^(test_data_hole$x) + 
+  (test_data_hole$y)^2 - 
+  5*(test_data_hole$x > test_data_hole$y) + 
+  4*test_data_hole$x*test_data_hole$y
+
+closest_point = function(new_point, existing_points) {
+  return(unname(which.min(sqrt(colSums((new_point - t(existing_points))^2)))))
+}
+
+test_membership = rep(0, nrow(test_data_hole))
+for(i in 1:nrow(test_data_hole)) {
+  test_membership[i] = final_membership[closest_point(as.numeric(test_data_hole[i,]), data_hole)]
+}
+
+test_estimation_output = estimation_procedure(test_membership, test_response)
+test_pred_response = test_estimation_output$point_estimates
+```
 
 
+```{r true-test-graph, fig.width = 7, fig.height = 6}
+ggplot(test_data_hole) + 
+  geom_point(aes(x, y, color = test_response)) +
+  scale_color_viridis(limits = c(-300, 500)) +
+  labs(color = "Response")
+```
+
+```{r pred-test-graph, fig.width = 7, fig.height = 6}
+ggplot(test_data_hole) + 
+  geom_point(aes(x, y, color = test_pred_response)) +
+  scale_color_viridis(limits = c(-300, 500)) +
+  labs(color = "Predicted Response")
+```
 
 
 
