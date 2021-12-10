@@ -247,6 +247,10 @@ ggplot(test_data_hole) +
   labs(color = "Predicted Response")
 ```
 
+```{r residual, fig.width = 7, fig.height = 6}
+test_residual = test_response - test_pred_response
+ggplot() + geom_histogram(aes(x = test_residual), bins = 30)
+```
 
 
 
