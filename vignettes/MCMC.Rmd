@@ -260,7 +260,9 @@ ggraph(final_graph, layout = data_hole) +
 
 ## Predicting on Test Data
 
-```{r prediction}
+Now that we have a model, let's predict at all the points our space surveyors missed. Our test data points are stored in `test_data_hole`. The method by which we will predict is by taking each point to predict at, finding the closest vertex in our model (by Euclidean distance), and assigning it to the same cluster. Below is some code to find the closest vertex for each new point:
+
+```{r prediction-data, echo = FALSE}
 test_x = runif(500, min = -10, max = 10)
 test_y = runif(500, min = -10, max = 10)
 test_data_full = data.frame(x = test_x, y =  test_y)
@@ -269,7 +271,9 @@ test_response = 1.2^(test_data_hole$x) +
   (test_data_hole$y)^2 - 
   5*(test_data_hole$x > test_data_hole$y) + 
   4*test_data_hole$x*test_data_hole$y
+```
 
+```{r prediction-method}
 closest_point = function(new_point, existing_points) {
   return(unname(which.min(sqrt(colSums((new_point - t(existing_points))^2)))))
 }
@@ -283,6 +287,7 @@ test_estimation_output = estimation_procedure(test_membership, test_response)
 test_pred_response = test_estimation_output$point_estimates
 ```
 
+Here is what the true response function applied to our testing data looks like:
 
 ```{r true-test-graph, fig.width = 7, fig.height = 6}
 ggplot(test_data_hole) + 
@@ -291,12 +296,16 @@ ggplot(test_data_hole) +
   labs(color = "Response")
 ```
 
+And here is what our model predicted the response function of our testing data to look like:
+
 ```{r pred-test-graph, fig.width = 7, fig.height = 6}
 ggplot(test_data_hole) + 
   geom_point(aes(x, y, color = test_pred_response)) +
   scale_color_viridis(limits = c(-300, 500)) +
   labs(color = "Predicted Response")
 ```
+
+Not bad for such a simple procedure! Here is a histogram of the prediction errors from this method:
 
 ```{r residual, fig.width = 7, fig.height = 6}
 test_error = test_response - test_pred_response
@@ -305,6 +314,6 @@ ggplot() +
   labs(x = "Prediction Error")
 ```
 
-
+As we can see, even with a very simple combination of the four core graph operations we can recover a lot of information about the true response function.
 
 
