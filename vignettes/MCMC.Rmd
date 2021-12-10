@@ -16,12 +16,16 @@ knitr::opts_chunk$set(
 )
 ```
 
-```{r setup}
+```{r setup, include = FALSE}
 library(BASTION)
 library(ggplot2)
 library(ggraph)
 library(igraph)
 ```
+
+# Generating Example Data
+
+
 
 ```{r data-gen, fig.width = 6, fig.height = 6}
 set.seed(12345)
@@ -33,11 +37,16 @@ ggplot(data_hole) + geom_point(aes(x, y))
 ```
 
 ```{r data-response, fig.width = 6, fig.height = 6}
-response = 1.2^(data_hole$x) + (data_hole$y)^2 - 5*(data_hole$x > data_hole$y) + 4*data_hole$x*data_hole$y
+response = 1.2^(data_hole$x) + 
+  (data_hole$y)^2 - 
+  5*(data_hole$x > data_hole$y) + 
+  4*data_hole$x*data_hole$y
 ggplot(data_hole) + 
   geom_point(aes(x, y, color = response)) +
   scale_color_viridis()
 ```
+
+# The constructGraph function
 
 ```{r make-graph, fig.width = 6, fig.height = 6}
 hole_graph = constructGraph(data_hole, 5)
@@ -46,6 +55,8 @@ ggraph(hole_graph, layout = data_hole) +
   geom_node_point(aes(color = response)) +
   scale_color_viridis()
 ```
+
+# Initializing Clusters
 
 ```{r make-cluster, fig.width = 6, fig.height = 6}
 clustered_output = constructClusters(hole_graph, nclust = 10)
@@ -56,6 +67,10 @@ ggraph(clustered_output$spanning_forest, layout = data_hole) +
   labs(colour = "Cluster")
 ```
 
+# Graph Operations
+
+## Birth Move
+
 ```{r cluster-birth, fig.width = 6, fig.height = 6}
 birth_output = graphBirth(clustered_output$spanning_forest, clustered_output$membership, clust = 7)
 ggraph(birth_output$graph, layout = data_hole) +
@@ -65,6 +80,8 @@ ggraph(birth_output$graph, layout = data_hole) +
   labs(colour = "Cluster")
 ```
 
+## Death Move
+
 ```{r cluster-death, fig.width = 6, fig.height = 6}
 death_output = graphDeath(birth_output$graph, birth_output$membership, hole_graph)
 ggraph(death_output$graph, layout = data_hole) +
@@ -73,6 +90,8 @@ ggraph(death_output$graph, layout = data_hole) +
   scale_colour_brewer(palette = "Paired") + 
   labs(colour = "Cluster")
 ```
+
+## Change Move
 
 ```{r cluster-change, fig.width = 6, fig.height = 6}
 change_output = graphChange(death_output$graph, death_output$membership, hole_graph)
@@ -85,6 +104,8 @@ ggraph(change_output$graph, layout = data_hole) +
 
 Subtle change in groups 3, 9, 10
 
+## Hyper Move
+
 ```{r cluster-hyper, fig.width = 6, fig.height = 6}
 hyper_output = graphHyper(hole_graph, change_output$membership)
 ggraph(hyper_output$graph, layout = data_hole) +
@@ -93,6 +114,8 @@ ggraph(hyper_output$graph, layout = data_hole) +
   scale_colour_brewer(palette = "Paired") + 
   labs(colour = "Cluster")
 ```
+
+# Simulation Study
 
 Let's put it all together in a very simple estimation procedure. Suppose we want to try and estimate the response function as piecewise constant over the domain. Our estimate for the piecewise constant of each cluster will be the mean of the response at the cluster's member vertices, and the per-cluster error will be the sum of squared difference between each response and our estimate. We'll assess the total error of our graph by summing the error of each cluster, and penalize the number of clusters by adding a scaled exponential function of the number of clusters to the total error.
 
@@ -108,7 +131,10 @@ estimation_procedure = function(membership, response) {
     point_estimates[membership == i] = estimates[i]
   }
   total_penalty = sum(errors) + (exp(k)/length(membership))
-  return(list(total_penalty = total_penalty, errors = errors, estimates = estimates, point_estimates = point_estimates))
+  return(list(total_penalty = total_penalty, 
+              errors = errors, 
+              estimates = estimates, 
+              point_estimates = point_estimates))
 }
 ```
 
@@ -119,7 +145,7 @@ iterations = 500
 current_graph = clustered_output$spanning_forest
 current_membership = clustered_output$membership
 current_loss = estimation_procedure(current_membership, response)$total_penalty
-for(i in 1:500) {
+for(i in 1:iterations) {
   move = sample(1:4, 1, prob = c(0.4, 0.4, 0.1, 0.1))
   if(move == 1) {
     proposed_output = graphBirth(current_graph, current_membership)
