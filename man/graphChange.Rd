@@ -17,6 +17,10 @@ graphChange(graph, membership, full_graph)
 A list containing two elements:
 \item{graph}{The input graph with the different set of active edges}
 \item{membership}{A vector of integers of length N with k unique integers which map each vertex to a cluster, likely different than input membership}
+\item{new_dclust_ids}{Vertex keys of the vertices belonging to the newly unified cluster before the birth operation}
+\item{old_dclust_ids}{Vertex keys of the vertices belonging only to the cluster being merged which has a higher number before the birth operation}
+\item{new_bclust_ids}{Vertex keys of the vertices belonging to the new cluster after the birth operation}
+\item{old_bclust_ids}{Vertex keys of the vertices from the cluster which was born excluding the ones from \code{new_bclust_ids}}
 }
 \description{
 \code{graphChange} executes \code{\link{graphDeath}} on the inputs and then executes \code{\link{graphBirth}}

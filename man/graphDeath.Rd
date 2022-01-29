@@ -17,6 +17,8 @@ graphDeath(graph, membership, full_graph)
 A list containing two elements:
 \item{graph}{The input graph with 1 additional active edge}
 \item{membership}{A vector of integers of length N with k - 1 unique integers which map each vertex to a cluster}
+\item{new_clust_ids}{Vertex keys of the vertices belonging to the newly unified cluster}
+\item{old_clust_ids}{Vertex keys of the vertices belonging only to the cluster being merged which has a higher number}
 }
 \description{
 \code{graphDeath} takes in a spanning forest graph with k disconnected components corresponding to
