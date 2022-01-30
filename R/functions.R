@@ -304,7 +304,11 @@ graphBirth = function(graph, membership, clust = NULL) {
   if(is.null(clust)) {
     # Exclude clusters which only have one vertex
     valid_clusts = (1:k)[which(igraph::components(graph)$csize > 1)]
-    clust = sample(valid_clusts, 1)
+    if(length(valid_clusts) == 1) {
+      clust = valid_clusts
+    } else {
+      clust = sample(valid_clusts, 1)
+    }
   }
   # Test that clust is valid
   if(clust > k || clust < 1) {
