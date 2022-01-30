@@ -501,8 +501,8 @@ fitBAST <- function(Y, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12
       log_post_out[(iter-BURNIN)/THIN] = evalLogPost(mu, g, sigmasq_y, k, Y, hyper)
     }
     
-    if(iter %% 100 == 0)
-      cat('Iteration', iter, 'done\n')
+    #if(iter %% 100 == 0)
+    #  cat('Iteration', iter, 'done\n')
   }
   
   mode(cluster_out) = 'integer'  # to save memory
@@ -652,7 +652,7 @@ ggplot() +
 
 The BASTION package does not include a function for constructing a constrained Delauney triangulation graph, so the graph will be constructed using the `constrainedDentri` function from the paper repository and used for all implementations.
 
-```{r make-aral-graph}
+```{r make-aral-graph, fig.width = 6, fig.height = 6}
 aral_graph = constrainedDentri(n, gen2dMesh(coords, bnd)) # Get full graph
 E(aral_graph)$eid = c(1:ecount(aral_graph)) # Assign edge ids
 V(aral_graph)$vid = c(1:vcount(aral_graph)) # Assign vertex ids
@@ -787,7 +787,7 @@ BASTIONfit = function(Y, graph, init_vals, hyperpars, MCMC, BURNIN, THIN, seed =
       
       if(move == 1) { ## Birth move
         # split an existing cluster
-        clust_split = sample.int(k_m, 1, prob = csize_m - 1)
+        clust_split = sample.int(k_m, 1, prob = (csize_m - 1))
         proposed_output = graphBirth(mstgraph_m, cluster_m, clust_split)
         vid_new = proposed_output$new_clust_ids
         vid_old = proposed_output$old_clust_ids
@@ -825,7 +825,7 @@ BASTIONfit = function(Y, graph, init_vals, hyperpars, MCMC, BURNIN, THIN, seed =
         if(runif(1) < acc_prob){
           # accept
           mstgraph_lst[[m]] = proposed_output$graph
-          csize[[m]] = components(mstgraph_m)$csize
+          csize[[m]] = components(proposed_output$graph)$csize
           cluster[, m] = proposed_output$membership
           k[m] = k[m] + 1
         }
@@ -867,8 +867,8 @@ BASTIONfit = function(Y, graph, init_vals, hyperpars, MCMC, BURNIN, THIN, seed =
         acc_prob = exp(acc_prob)
         if(runif(1) < acc_prob){
           # accept
-          mstgraph_m = proposed_output$graph
-          csize[[m]] = components(mstgraph_m)$csize
+          mstgraph_lst[[m]] = proposed_output$graph
+          csize[[m]] = components(proposed_output$graph)$csize
           cluster[, m] = proposed_output$membership
           k[m] = k[m] - 1
         }
@@ -882,6 +882,13 @@ BASTIONfit = function(Y, graph, init_vals, hyperpars, MCMC, BURNIN, THIN, seed =
         # split_res = splitCluster(mstgraph_m, k_m-1, merge_res$subgraphs, merge_res$csize)
         
         proposed_output = graphChange(mstgraph_m, cluster_m, graph)
+        
+        vid_old_d = proposed_output$old_dclust_ids
+        vid_new_d = proposed_output$new_dclust_ids
+        
+        vid_old_b = proposed_output$old_bclust_ids
+        vid_new_b = proposed_output$new_bclust_ids
+        
         
         # compute log-likelihood ratio
         # First do it for the death move
@@ -922,7 +929,7 @@ BASTIONfit = function(Y, graph, init_vals, hyperpars, MCMC, BURNIN, THIN, seed =
         if(runif(1) < acc_prob){
           # accept
           mstgraph_lst[[m]] = proposed_output$graph
-          csize[[m]] = components(mstgraph_m)$csize
+          csize[[m]] = components(proposed_output$graph)$csize
           cluster[, m] = proposed_output$membership
         }
       }
@@ -961,33 +968,38 @@ BASTIONfit = function(Y, graph, init_vals, hyperpars, MCMC, BURNIN, THIN, seed =
       log_post_out[(iter-BURNIN)/THIN] = evalLogPost(mu, g, sigmasq_y, k, Y, hyper)
     }
     
-    if(iter %% 100 == 0)
-      cat('Iteration', iter, 'done\n')
+    # cat(iter, ', ', sep = "")
   }
   
   mode(cluster_out) = 'integer'  # to save memory
   return(list('mu_out' = mu_out,
               'sigmasq_y_out' = sigmasq_y_out,
-              'cluster_out' = cluster_out, 'log_post_out' = log_post_out))
+              'cluster_out' = cluster_out, 
+              'log_post_out' = log_post_out))
 }
 ```
 
-Let's take a look at the speed difference:
+Let's take a look at the speed difference. Note that the code below is by default not run at the time of this vignette's execution as it is extremely slow. It instead loads the results precomputed on a system with an AMD Ryzen 7 3700X processor and 32GB of RAM.
 
-```{r aral-speed}
-# aral_speed = microbenchmark(
-#   fitBAST(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345),
-#   BASTIONfit(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345),
-#   times = 10
-# )
+```{r aral-speed, eval=FALSE}
+aral_speed = microbenchmark(
+  bastfit = fitBAST(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345),
+  bastionfit = BASTIONfit(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345),
+  times = 5
+)
+save(aral_speed, file = "aral_speed_results.Rda")
 ```
 
 
-```{r aral-speed-xtable, include=FALSE}
-
+```{r aral-speed-xtable, results='asis'}
+datapath = paste0(getwd(), "/aral_speed_results.Rda")
+attach(what = datapath, name = "precomputed")
+speed_table1 = xtable(summary(aral_speed), caption = "Speed comparison (seconds) between the different native R implementations of the BAST model.")
+detach(precomputed)
+print(speed_table1, type = "html", comment = FALSE)
 ```
 
-
+Unsurprisingly, the speed leaves much to be desired with even the fastest possible fitting time coming in at almost 7 minutes on a relatively small data set. Further, the original code from the paper is more performant at the cost of being more specific to this particular setup.
 
 
 
