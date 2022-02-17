@@ -52,6 +52,7 @@ public:
       membership.reserve(n);
       minSpanTree(); // Make currentGraph a minimum spanning tree
       updateMembership(); // Initialize k, membership, clusts
+      storeGraphState();
     }
 
     void updateMembership() {
@@ -100,6 +101,7 @@ public:
     }
 
     void birth() {
+      storeGraphState();
         Rcpp::NumericVector probs;
         for (int i = 0; i < k; i++) {
             probs.push_back(clusts[i].size() - 1);
@@ -150,6 +152,7 @@ public:
     }
 
     void death() {
+      storeGraphState();
       // First, find which edges are between 2 clusters
       std::vector<bool> betweenness = getBetweenEdges();
       std::vector<int> between_edge_ids;
@@ -188,6 +191,7 @@ public:
     }
 
     void hyper() {
+      storeGraphState();
       // First, find which edges were connecting different clusters
       std::vector<bool> between_edge_ids = getBetweenEdges();
       // Clear the current graph state, reset it to the full graph
@@ -217,6 +221,34 @@ public:
         }
       }
     }
+    // This only goes back by one step which is fine for the standard
+    // set of birth, death, hyper moves following a rejection
+    // However, for 'change' moves (death followed by birth) such as implemented
+    // in BAST model, the function will have to store the original state and
+    // reverse on its own since it would be going back by two steps
+    void reverseMove() {
+      currentGraph = old_currentGraph;
+      membership = old_membership;
+      clusts = old_clusts;
+      new_clust_ids = old_new_clust_ids;
+      old_clust_ids = old_old_clust_ids;
+    }
+
+private:
+  Graph old_currentGraph;
+  std::vector<int> old_membership;
+  std::vector<std::vector<int>> old_clusts;
+  std::vector<int> old_new_clust_ids;
+  std::vector<int> old_old_clust_ids;
+
+  void storeGraphState() {
+    old_currentGraph = currentGraph;
+    old_membership = membership;
+    old_clusts = clusts;
+    old_new_clust_ids = new_clust_ids;
+    old_old_clust_ids = old_clust_ids;
+  }
+
 };
 
 Rcpp::List BASTIONfit(const Rcpp::IntegerMatrix &edges,
@@ -225,7 +257,8 @@ Rcpp::List BASTIONfit(const Rcpp::IntegerMatrix &edges,
                       const int MCMC_iter,
                       const int BURNIN,
                       const int THIN,
-                      const int n_learners) {
+                      const int n_learners,
+                      const int k_max) {
 // First, construct the graph from the edge list
   int n_edges = edges.rows();
   int n_verts = Y.size();
@@ -236,13 +269,62 @@ Rcpp::List BASTIONfit(const Rcpp::IntegerMatrix &edges,
   }
   // We now have our full graph with initial weights
   Graph g(edge_vec.begin(), edge_vec.end(), weights, n_verts);
-
-  for (int iter = 0; iter < MCMC_iter; iter++) {
-      for (int learner = 0; learner < n_learners; iter++) {
-
-      }
+  // Initialize a matrix to store each fitted value throughout the iterations
+  // Each column represents a weak learner and each row represents a vertex
+  NumericMatrix fitted_mus(n_verts, n_learners);
+  // Initialize each weak learner ([TODO] further consideration on whether to use
+  // list vs vector to store each weak learner is warranted)
+  std::vector<RSTlearner> WeakLearners;
+  for (int learner = 0; learner < n_learners; learner++) {
+    RSTlearner Learner(&g);
+    WeakLearners.push_back(Learner);
   }
-
+  // There should be at most k_max <= n_verts clusters
+  int max_clusts = (k_max <= n_verts)? k_max : n_verts;
+  // 0 is a birth, 1 is a death, 2 is a change, 3 is a hyper
+  NumericVector moves = {0, 1, 2, 3};
+  for (int iter = 0; iter < MCMC_iter; iter++) {
+      for (int learner = 0; learner < n_learners; learner++) {
+        int k_m = WeakLearners[learner].k;
+        NumericVector LearnerResponse = Y - rowSums(fitted_mus) - fitted_mus( _ , learner);
+        NumericVector moveProbability;
+        if(k_m == 1) {
+          moveProbability = NumericVector::create(0.9, 0, 0, 0.1);
+        } else if(k_m == max_clusts) {
+          moveProbability = NumericVector::create(0, 0.6, 0.3, 0.1);
+        } else {
+          moveProbability = NumericVector::create(0.3, 0.3, 0.3, 0.1);
+        }
+        int move = sample(move, 1, false, moveProbability)(0);
+        switch(move) {
+        case 0:
+          WeakLearners[learner].birth();
+          // Calculate acceptance probability acc_prob
+          // if(R::runif(0, 1) > acc_prob) // reject
+          //    WeakLearners[learner].reverseMove();
+          break;
+        case 1:
+          WeakLearners[learner].death();
+          // Calculate acceptance probability acc_prob
+          // if(R::runif(0, 1) > acc_prob) // reject
+          //    WeakLearners[learner].reverseMove();
+          break;
+        case 2:
+          WeakLearners[learner].death();
+          WeakLearners[learner].birth();
+          // Calculate acceptance probability acc_prob
+          // if(R::runif(0, 1) > acc_prob) // reject
+          //    WeakLearners[learner].reverseMove();
+          break;
+        case 3:
+          WeakLearners[learner].hyper();
+        }
+        // Update the learner column of g w/ new fitted_mus
+      }
+    // Update sigma squared of y
+    // Save the result
+  }
+  // Return the result
 }
 
 
