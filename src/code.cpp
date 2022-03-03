@@ -7,6 +7,7 @@
 #include <fstream>
 #include <vector>
 #include <iterator>
+#include <cmath>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/kruskal_min_spanning_tree.hpp>
 #include <boost/graph/connected_components.hpp>
