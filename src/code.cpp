@@ -258,8 +258,20 @@ Rcpp::List BASTIONfit(const Rcpp::IntegerMatrix &edges,
                       const int MCMC_iter,
                       const int BURNIN,
                       const int THIN,
-                      const int n_learners,
-                      const int k_max) {
+                      const List init_values,
+                      const List hyperpars) {
+// Fetch hyper parameters
+  // Fetch the initial values and hyper parameters
+    const int k_max = hyperpars["k_max"];
+    const int n_learners = hyperpars["n_learners"];
+    const double lambda_k = hyperpars["lambda_k"];
+    const double lambda_s = hyperpars["lambda_s"];
+    const double nu = hyperpars["nu"];
+    const double sigmasq_mu = hyperpars["sigmasq_mu"];
+// Fetch initial values
+    double sigmasq_y = init_values["sigmasq_y"];
+    List mu = init_values["mu"];
+
 // First, construct the graph from the edge list
   int n_edges = edges.rows();
   int n_verts = Y.size();
