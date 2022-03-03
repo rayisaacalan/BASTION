@@ -313,21 +313,32 @@ Rcpp::List BASTIONfit(const Rcpp::IntegerMatrix &edges,
   // Initialize a matrix to store each fitted value throughout the iterations
   // Each column represents a weak learner and each row represents a vertex
   NumericMatrix fitted_mus(n_verts, n_learners);
+  // Vector of k's for evaluating log posterior
+  NumericVector K;
   // Initialize each weak learner ([TODO] further consideration on whether to use
   // list vs vector to store each weak learner is warranted)
   std::vector<RSTlearner> WeakLearners;
   for (int learner = 0; learner < n_learners; learner++) {
     RSTlearner Learner(&g);
     WeakLearners.push_back(Learner);
+    K.push_back(Learner.k);
   }
+
+  // Initialize some values to be used in the MCMC
+  // Storage for output values
+  List mu_out;
+  NumericVector sigmasq_y_out;
+  List cluster_out;
+  NumericVector log_post_out;
   // There should be at most k_max <= n_verts clusters
   int max_clusts = (k_max <= n_verts)? k_max : n_verts;
   // 0 is a birth, 1 is a death, 2 is a change, 3 is a hyper
   NumericVector moves = {0, 1, 2, 3};
   for (int iter = 0; iter < MCMC_iter; iter++) {
+    NumericMatrix MembershipByLearner(n_verts, n_learners);
       for (int learner = 0; learner < n_learners; learner++) {
         int k_m = WeakLearners[learner].k;
-        NumericVector LearnerResponse = Y - rowSums(fitted_mus) - fitted_mus( _ , learner);
+        NumericVector LearnerResponse = Y - (rowSums(fitted_mus) - fitted_mus( _ , learner));
         NumericVector moveProbability;
         if(k_m == 1) {
           moveProbability = NumericVector::create(0.9, 0, 0, 0.1);
@@ -336,38 +347,169 @@ Rcpp::List BASTIONfit(const Rcpp::IntegerMatrix &edges,
         } else {
           moveProbability = NumericVector::create(0.3, 0.3, 0.3, 0.1);
         }
-        int move = sample(move, 1, false, moveProbability)(0);
+        int move = sample(moves, 1, false, moveProbability)(0);
         switch(move) {
-        case 0:
-          WeakLearners[learner].birth();
+          case 0: {
+            WeakLearners[learner].birth();
           // Calculate acceptance probability acc_prob
-          // if(R::runif(0, 1) > acc_prob) // reject
-          //    WeakLearners[learner].reverseMove();
-          break;
-        case 1:
-          WeakLearners[learner].death();
+            // Log-prior ratio
+            double log_A = log(lambda_k) - log(k_m + 1);
+              // If k_m is almost at k_max, rd_new is smaller
+            double rd_new = (k_m == (std::min(k_max, n_verts) - 1)) ? 0.6 : 0.3;
+            // Log-proposal ratio
+            double log_P = log(rd_new) - log(moveProbability(0));
+            // Log-likelihood ratio
+            double sigma_ratio = sigmasq_y / sigmasq_mu;
+            int csize_old = WeakLearners[learner].old_clust_ids.size();
+            int csize_new = WeakLearners[learner].new_clust_ids.size();
+            NumericVector vid_old = wrap(WeakLearners[learner].old_clust_ids);
+            NumericVector vid_new = wrap(WeakLearners[learner].new_clust_ids);
+            NumericVector Response_old = LearnerResponse[vid_old];
+            NumericVector Response_new = LearnerResponse[vid_new];
+            double sum_e_old = sum(Response_old);
+            double sum_e_new = sum(Response_new);
+            double logdetdiff = -0.5 * (
+              log(csize_old + sigma_ratio) +
+              log(csize_new + sigma_ratio) -
+              log(csize_old + csize_new + sigma_ratio) -
+              log(sigma_ratio)
+            );
+            double quaddiff = (0.5/sigmasq_y) * (
+              ((sum_e_old*sum_e_old)/(csize_old+sigma_ratio)) +
+              ((sum_e_new*sum_e_new)/(csize_new+sigma_ratio)) -
+              ((pow(sum_e_new + sum_e_old, 2))/(csize_old+csize_new+sigma_ratio))
+            );
+            double log_L = logdetdiff + quaddiff;
+            // Calculate acceptance probability
+            double log_acc_prob = fmin(0.0, log_A + log_P + log_L);
+            double acc_prob = exp(log_acc_prob);
+            if(R::runif(0, 1) > acc_prob) { // reject
+              WeakLearners[learner].reverseMove();
+            }
+            break;
+          }
+          case 1: {
+            WeakLearners[learner].death();
           // Calculate acceptance probability acc_prob
-          // if(R::runif(0, 1) > acc_prob) // reject
-          //    WeakLearners[learner].reverseMove();
-          break;
-        case 2:
-          WeakLearners[learner].death();
-          WeakLearners[learner].birth();
-          // Calculate acceptance probability acc_prob
-          // if(R::runif(0, 1) > acc_prob) // reject
-          //    WeakLearners[learner].reverseMove();
-          break;
-        case 3:
-          WeakLearners[learner].hyper();
-        }
+            // Log-prior ratio
+            double log_A = log(k_m) - log(lambda_k);
+            // If k_m is almost at k_max, rd_new is smaller
+            double rb_new = (k_m == 2) ? 0.9 : 0.3;
+            // Log-proposal ratio
+            double log_P = log(moveProbability(1)) - log(rb_new);
+            // Log-likelihood ratio
+            double sigma_ratio = sigmasq_y / sigmasq_mu;
+            int csize_old = WeakLearners[learner].old_clust_ids.size();
+            int csize_new = WeakLearners[learner].new_clust_ids.size();
+            NumericVector vid_old = wrap(WeakLearners[learner].old_clust_ids);
+            NumericVector vid_new = wrap(WeakLearners[learner].new_clust_ids);
+            NumericVector Response_old = LearnerResponse[vid_old];
+            NumericVector Response_new = LearnerResponse[vid_new];
+            double sum_e_old = sum(Response_old);
+            double sum_e_new = sum(Response_new);
+            double logdetdiff = -0.5 * (
+                log(csize_new + sigma_ratio) -
+                log(csize_old + sigma_ratio) -
+                log(csize_new - csize_old + sigma_ratio) +
+                log(sigma_ratio)
+            );
+            double quaddiff = (0.5/sigmasq_y) * (
+                ((sum_e_new*sum_e_new)/(csize_new+sigma_ratio)) -
+                ((sum_e_old*sum_e_old)/(csize_old+sigma_ratio)) -
+                ((pow(sum_e_new - sum_e_old, 2))/(csize_new-csize_old+sigma_ratio))
+            );
+            double log_L = logdetdiff + quaddiff;
+            // Calculate acceptance probability
+            double log_acc_prob = fmin(0.0, log_A + log_P + log_L);
+            double acc_prob = exp(log_acc_prob);
+            if(R::runif(0, 1) > acc_prob) // reject
+               WeakLearners[learner].reverseMove();
+            break;
+          }
+          case 2: {
+            // Store the current graph state (since it will be going forwards
+            // by two steps)
+            Graph old_currentGraph = WeakLearners[learner].currentGraph;
+            std::vector<int> old_membership = WeakLearners[learner].membership;
+            std::vector<std::vector<int>> old_clusts = WeakLearners[learner].clusts;
+            std::vector<int> old_new_clust_ids = WeakLearners[learner].new_clust_ids;
+            std::vector<int> old_old_clust_ids = WeakLearners[learner].old_clust_ids;
+            // First, compute log-likelihood ratio for the death move
+            WeakLearners[learner].death();
+
+              // Log-likelihood ratio
+              double sigma_ratio = sigmasq_y / sigmasq_mu;
+              int csize_old = WeakLearners[learner].old_clust_ids.size();
+              int csize_new = WeakLearners[learner].new_clust_ids.size();
+              NumericVector vid_old = wrap(WeakLearners[learner].old_clust_ids);
+              NumericVector vid_new = wrap(WeakLearners[learner].new_clust_ids);
+              NumericVector Response_old = LearnerResponse[vid_old];
+              NumericVector Response_new = LearnerResponse[vid_new];
+              double sum_e_old = sum(Response_old);
+              double sum_e_new = sum(Response_new);
+              double logdetdiff = -0.5 * (
+                log(csize_new + sigma_ratio) -
+                  log(csize_old + sigma_ratio) -
+                  log(csize_new - csize_old + sigma_ratio) +
+                  log(sigma_ratio)
+              );
+              double quaddiff = (0.5/sigmasq_y) * (
+                ((sum_e_new*sum_e_new)/(csize_new+sigma_ratio)) -
+                  ((sum_e_old*sum_e_old)/(csize_old+sigma_ratio)) -
+                  ((pow(sum_e_new - sum_e_old, 2))/(csize_new-csize_old+sigma_ratio))
+              );
+              double log_L_death = logdetdiff + quaddiff;
+
+            // Now, compute the log-likelihood ratio for the birth move
+            WeakLearners[learner].birth();
+
+              // Log-likelihood ratio
+              int csize_old_b = WeakLearners[learner].old_clust_ids.size();
+              int csize_new_b = WeakLearners[learner].new_clust_ids.size();
+              NumericVector vid_old_b = wrap(WeakLearners[learner].old_clust_ids);
+              NumericVector vid_new_b = wrap(WeakLearners[learner].new_clust_ids);
+              NumericVector Response_old_b = LearnerResponse[vid_old_b];
+              NumericVector Response_new_b = LearnerResponse[vid_new_b];
+              double sum_e_old_b = sum(Response_old_b);
+              double sum_e_new_b = sum(Response_new_b);
+              double logdetdiff_b = -0.5 * (
+                log(csize_old_b + sigma_ratio) +
+                  log(csize_new_b + sigma_ratio) -
+                  log(csize_old_b + csize_new_b + sigma_ratio) -
+                  log(sigma_ratio)
+              );
+              double quaddiff_b = (0.5/sigmasq_y) * (
+                ((sum_e_old_b*sum_e_old_b)/(csize_old_b+sigma_ratio)) +
+                  ((sum_e_new_b*sum_e_new_b)/(csize_new_b+sigma_ratio)) -
+                  ((pow(sum_e_new_b + sum_e_old_b, 2))/(csize_old_b+csize_new_b+sigma_ratio))
+              );
+              double log_L_birth = logdetdiff_b + quaddiff_b;
+
+            // Add the log likelihood ratios for the two moves
+            double log_L = log_L_death + log_L_birth;
+            double log_acc_prob = fmin(0.0, log_L);
+            double acc_prob = exp(log_acc_prob);
+            if(R::runif(0, 1) > acc_prob) { // reject
+              // Manually reverse step
+              WeakLearners[learner].currentGraph = old_currentGraph;
+              WeakLearners[learner].membership = old_membership;
+              WeakLearners[learner].clusts = old_clusts;
+              WeakLearners[learner].new_clust_ids = old_new_clust_ids;
+              WeakLearners[learner].old_clust_ids = old_old_clust_ids;
+            }
+            break;
+          }
+          case 3: {
+            WeakLearners[learner].hyper();
+            break;
+          }
         // Update the learner column of g w/ new fitted_mus
       }
-    // Update sigma squared of y
+  // Update sigma squared of y
     // Save the result
   }
   // Return the result
 }
-
 
 
 
