@@ -532,9 +532,42 @@ Rcpp::List BASTIONfit(const Rcpp::IntegerMatrix &edges,
         K[learner] = WeakLearners[learner].k;
       }
   // Update sigma squared of y
+    // Simplification from R logic:
+    // Y_hat = fitted_mus[, n_learners - 1] + Y - (Y - (rowsums(fitted_mus) - fitted_mus[, n_learners - 1]))
+    // = fitted_mus[, n_learners - 1] + Y - Y + rowsums(fitted_mus) - fitted_mus[, n_learners - 1]
+    // = rowsums(fitted_mus)
+    NumericVector Y_hat = rowSums(fitted_mus);
+    double scale = 1/(0.5*(nu*lambda_s + sum((Y - Y_hat)*(Y - Y_hat))));
+    double shape = (double)(n_verts+nu)/2.0;
+    sigmasq_y = 1/(R::rgamma(shape, scale));
     // Save the result
+    if((iter > BURNIN) && (((iter - BURNIN) % THIN) == 0)) {
+      mu_out.push_back(mu);
+      sigmasq_y_out.push_back(sigmasq_y);
+      cluster_out.push_back(MembershipByLearner);
+    // Evaluate log posterior
+      // First evaluate log-likelihood
+      double log_prior = -((1+(nu/2.0))*log(sigmasq_y))
+                         -((nu*lambda_s)/(2.0*sigmasq_y))
+                         +sum(-1*(lchoose(n_verts-1,K-1))
+                              + K*log(lambda_k)
+                              - lfactorial(K))
+                         -(sum(pow(combine(mu), 2))/(2.0*sigmasq_mu));
+      // Then evaluate log-likelihood
+      double log_like = (-n_verts/2.0)*log(sigmasq_y)
+                        -(sum((Y - Y_hat)*(Y - Y_hat))/(2.0*sigmasq_y));
+      // Add the two
+      log_post_out.push_back(log_prior+log_like);
+    }
   }
   // Return the result
+  List OutputList = List::create(
+    Named("mu_out") = mu_out,
+    Named("cluster_out") = cluster_out,
+    Named("sigmasq_y_out") = sigmasq_y_out,
+    Named("log_post_out") = log_post_out
+  );
+  return(OutputList);
 }
 
 
