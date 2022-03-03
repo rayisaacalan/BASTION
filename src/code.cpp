@@ -503,7 +503,33 @@ Rcpp::List BASTIONfit(const Rcpp::IntegerMatrix &edges,
             WeakLearners[learner].hyper();
             break;
           }
-        // Update the learner column of g w/ new fitted_mus
+        }
+        // Update the learner column of fitted_mus w/ new fitted mus
+        k_m = WeakLearners[learner].k;
+        NumericVector membership = wrap(WeakLearners[learner].membership);
+        NumericVector csize;
+        NumericVector ClustResponse;
+        for(int i = 0; i < WeakLearners[learner].clusts.size(); i++) {
+          csize.push_back(WeakLearners[learner].clusts[i].size());
+          NumericVector ClustIndices = wrap(WeakLearners[learner].clusts[i]);
+          NumericVector ResponseByClust = LearnerResponse[ClustIndices];
+          ClustResponse.push_back(sum(ResponseByClust));
+        }
+        NumericVector Qinv_diag = 1/((csize/sigmasq_y) + 1/(sigmasq_mu));
+        NumericVector b = (Qinv_diag * ClustResponse) / sigmasq_y;
+        NumericVector NewMus;
+        for(int i = 0; i < k_m; i++) {
+          NewMus.push_back(R::rnorm(b[i], sqrt(Qinv_diag)[i]));
+        }
+        mu[learner] = NewMus;
+        std::vector<double> new_response;
+        for(int i = 0; i < n_verts; i++) {
+          new_response.push_back(NewMus[WeakLearners[learner].membership[i]]);
+        }
+        NumericVector NewResponse = wrap(new_response);
+        fitted_mus( _ , learner) = NewResponse;
+        MembershipByLearner( _ , learner) = membership;
+        K[learner] = WeakLearners[learner].k;
       }
   // Update sigma squared of y
     // Save the result
