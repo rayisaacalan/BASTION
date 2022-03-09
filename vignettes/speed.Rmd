@@ -858,7 +858,8 @@ BASTIONfit = function(Y, graph, init_vals, hyperpars, MCMC, BURNIN, THIN, seed =
                              log(sigma_ratio))
         quaddiff = 0.5 * (  sum_e_new^2/(csize_new+sigma_ratio) - 
                             sum_e_old^2/(csize_old+sigma_ratio) - 
-                            (sum_e_new-sum_e_old)^2/(csize_new-csize_old+sigma_ratio)
+                            (sum_e_new-sum_e_old)^2/
+                              (csize_new-csize_old+sigma_ratio)
                           ) / sigmasq_y
         log_L = logdetdiff + quaddiff
         
@@ -999,8 +1000,114 @@ detach(precomputed)
 print(speed_table1, type = "html", comment = FALSE)
 ```
 
-Unsurprisingly, the speed leaves much to be desired with even the fastest possible fitting time coming in at almost 7 minutes on a relatively small data set. Further, the original code from the paper is more performant at the cost of being more specific to this particular setup.
 
+
+Unsurprisingly, the speed leaves much to be desired with even the fastest possible fitting time coming in at almost 7 minutes on a relatively small data set. Further, the original code from the paper is more performant at the cost of being more specific to this particular setup. Let's take a look at the performance after rewriting in C++ using Rcpp:
+
+
+```{r, eval = FALSE}
+bastionfit_C = BASTIONfit_C(Y_std, aral_graph, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345)
+```
+
+```{r, eval = FALSE}
+library(RcppClock)
+load("aral_cpp_speed_profile.Rda")
+cpp_df = data.frame(process = summary(BASTIONfit_C_timings)$ticker,
+                    time_spent_s = summary(BASTIONfit_C_timings)$mean * summary(BASTIONfit_C_timings)$neval * 0.000001)
+cpp_df
+```
+
+```{r, eval = FALSE}
+bastfit = fitBAST(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345)
+bastionfit = BASTIONfit(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345)
+save(bastfit, bastionfit, file = "aral_fits_no_c.Rda")
+```
+
+
+```{r aral-speed-full, eval = FALSE}
+aral_speed_full = microbenchmark(
+  bastfit = fitBAST(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345),
+  bastionfit = BASTIONfit(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345),
+  bastionfit_C = BASTIONfit_C(Y_std, aral_graph, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345),
+  times = 5
+)
+
+save(aral_speed_full, file = "aral_speed_results_full.Rda")
+```
+
+
+```{r test-cpp-speed-one, eval = FALSE}
+test_cpp_speed = microbenchmark(
+  bastionfit_C = BASTIONfit_C(Y_std, aral_graph, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345),
+  times = 1
+)
+```
+
+
+```{r aral-speed-full-xtable, results='asis'}
+datapath = paste0(getwd(), "/aral_speed_results_full.Rda")
+attach(what = datapath, name = "precomputed")
+speed_table2 = xtable(summary(aral_speed_full), caption = "Speed comparison (seconds) between the different native R implementations and C++.")
+detach(precomputed)
+print(speed_table2, type = "html", comment = FALSE)
+```
+
+
+```{r, eval = FALSE}
+set.seed(12345678)
+x = runif(1000, min = -10, max = 10)
+y = runif(1000, min = -10, max = 10)
+data_full = data.frame(x, y)
+test_coords = data_full[x^2 + y^2 >= 16, ]
+test_graph = constructGraph(test_coords, 4)
+# Not run: plot this graph using ggraph package
+# ggraph(test_graph, layout = test_coords) + geom_node_point() + geom_edge_link0()
+n = igraph::vcount(test_graph)
+z = 1.2^(test_coords$x) + 
+  (test_coords$y)^2 - 
+  1000*(test_coords$x > test_coords$y) + 
+  4*test_coords$x*test_coords$y # response
+
+# ggraph(test_graph, layout = test_coords) + 
+#   geom_edge_link0(edge_alpha = 0.1) + 
+#   geom_node_point(aes(color = z)) +
+#   scale_color_viridis()
+
+
+M = 3      # number of weak learners
+k_max = 6   # maximum number of clusters per weak learner
+mu = list() # initial values of mu
+cluster = matrix(1, nrow = n, ncol = M)  # initial cluster memberships
+for(m in 1:M) {
+  mu[[m]] = c(0)
+}
+
+init_val = list()
+init_val[['mu']] = mu
+init_val[['sigmasq_y']] = 1
+
+
+# find lambda_s
+nu = 3; q = 0.9
+quant = qchisq(1-q, nu)
+lambda_s = quant * var(z) / nu
+
+hyperpar = c()
+hyperpar['sigmasq_mu'] = (0.5/(2*sqrt(M)))^2
+hyperpar['lambda_s'] = lambda_s
+hyperpar['nu'] = nu
+hyperpar['lambda_k'] = 4
+hyperpar['M'] = M
+hyperpar['k_max'] = k_max
+
+# MCMC parameters
+# number of posterior samples = (MCMC - BURNIN) / THIN
+MCMC = 1000    # MCMC iterations
+BURNIN = 500  # burnin period length
+THIN = 5        # thinning intervals
+
+q = BASTIONfit_C(z, test_graph, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345)
+```
 
 
 

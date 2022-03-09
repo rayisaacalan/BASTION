@@ -1,7 +1,10 @@
 
-
+// [[Rcpp::depends(RcppClock)]]
 // [[Rcpp::depends(BH)]]
+// [[Rcpp::plugins("cpp11")]]
 
+#include <RcppClock.h>
+#include <thread>
 #include <Rcpp.h>
 #include <iostream>
 #include <fstream>
@@ -47,40 +50,66 @@ public:
 
 
     RSTlearner(const Graph* graph) {
+      //Rprintf(" Initializing a weak learner");
       g = graph; // Initialize g
       boost::copy_graph(*g, currentGraph); // Initialize currentGraph
       n = boost::num_vertices(currentGraph); // Initialize n
-      membership.reserve(n);
+      //Rprintf(".");
       minSpanTree(); // Make currentGraph a minimum spanning tree
+      //Rprintf(".");
       updateMembership(); // Initialize k, membership, clusts
+      //Rprintf(".");
       storeGraphState();
+          //printGraph();
+      //Rprintf(" done\n");
     }
 
     void updateMembership() {
       membership.clear();
+      std::vector<int> mem(boost::num_vertices(currentGraph));
       k = boost::connected_components(currentGraph,
                                       boost::make_iterator_property_map(
-                                        membership.begin(), boost::get(
+                                        mem.begin(), boost::get(
                                             boost::vertex_index, currentGraph
                                         )));
+      /*Rprintf("\n   New Membership:\n");
+      for(int i = 0; i < mem.size(); ++i) {
+        //Rprintf("   %i ", mem[i]);
+      }
+      //Rprintf("\n");*/
+      membership.assign(mem.begin(), mem.end());
       updateClusts();
     }
 
     void updateClusts() {
       clusts.clear();
-      for(auto i = membership.begin(); i != membership.end(); ++i) {
-        clusts[*i].push_back(i - membership.begin());
+      clusts.reserve(k);
+      for(int i = 0; i < k; ++i) {
+        clusts.emplace_back(std::vector<int>());
+        clusts[i].reserve(n);
+      }
+      for(int i = 0; i < membership.size(); ++i) {
+        clusts[(membership[i])].emplace_back(i);
       }
     }
 
     void minSpanTree() {
       std::vector<Edge> mst_edges;
+      std::vector<std::pair<int,int>> mst_edges_vertices;
       // This shouldn't be necessary since the weights will either be given to
       // current graph by way of copying the full graph (on first initialization)
       // or through the hyper step
       //Weights currentWeight = boost::get(boost::edge_weight, currentGraph);
       boost::kruskal_minimum_spanning_tree(currentGraph, std::back_inserter(mst_edges));
-      Graph new_graph(mst_edges.begin(), mst_edges.end()/*, currentWeight*/, n);
+      mst_edges_vertices.reserve(mst_edges.size());
+      //Rprintf("\n");
+      for(auto i = 0; i < mst_edges.size(); ++i) {
+        std::pair<int,int> vertex_pair = std::make_pair(mst_edges[i].m_source, mst_edges[i].m_target);
+        mst_edges_vertices.emplace_back(vertex_pair);
+        //Rprintf("%i --- %i\n", vertex_pair.first, vertex_pair.second);
+      }
+      Graph new_graph(mst_edges_vertices.begin(), mst_edges_vertices.end()/*, currentWeight*/, n);
+      currentGraph.clear();
       boost::copy_graph(new_graph, currentGraph);
     }
 
@@ -89,40 +118,59 @@ public:
     // each step instead of a bulk computation
     std::vector<bool> getBetweenEdges() {
       // Initialize result
+      //Rprintf("         Getting between edges\n");
       std::vector<bool> result;
       // Get list of all edges (iterator pair of beginning and end)
       auto edges_iter_full = boost::edges(*g);
+      //Rprintf("         Declared variables\n");
       for(auto i = edges_iter_full.first; i != edges_iter_full.second; ++i) {
         // For each edge, do the source and target vertex belong to the same cluster?
         // If they belong to the same cluster, it is NOT a between edge (false)
         // If they belong to different clusters, it IS a between edge (true)
-        result.push_back(membership[(*i).m_source] != membership[(*i).m_target]);
+        //Rprintf("         Checking an edge\n");
+        result.emplace_back((membership[(*i).m_source]) != (membership[(*i).m_target]));
+        //Rprintf("         Checked an edge\n");
       }
       return(result);
     }
 
     void birth() {
       storeGraphState();
-        Rcpp::NumericVector probs;
-        for (int i = 0; i < k; i++) {
-            probs.push_back(clusts[i].size() - 1);
+      //printMembership();
+      //Rprintf("       Entering a Birth step\n");
+        Rcpp::NumericVector probs(k);
+        for (int i = 0; i < k; ++i) {
+            probs(i) = (clusts[i].size() - 1);
+            //Rprintf("        Cluster %i has prob weight %i\n", i, clusts[i].size() - 1);
         }
         // First, randomly pick cluster to split (based on size, this could change)
-        int clust_split = (Rcpp::sample(k, 1, false, probs))(0);
+        int clust_split = (Rcpp::sample(k, 1, false, probs))(0) - 1;
+        //Rprintf("       Splitting cluster %i\n", clust_split);
         // What vertices belong to the cluster we chose to split
         std::vector<int> clust_ids = clusts[clust_split];
         // Pick a vertex from that cluster at which the split will occur
-        int vertex_split = (Rcpp::sample(clust_ids.size(), 1, false))(0);
+        int vertex_split = clust_ids[(Rcpp::sample(clust_ids.size(), 1, false))(0) - 1];
+        //Rprintf("       Splitting at vertex %i\n", vertex_split);
         Vertex vertex_out = boost::vertex(vertex_split, currentGraph);
         // Get the edges connected to that vertex
+        /*if(boost::degree(vertex_out, currentGraph) == 0) {
+          printGraph();
+          stop("Selected vertex has no edges");
+        }*/
         auto edges_split = boost::out_edges(vertex_out, currentGraph);
         // Pick an edge to remove
-        int edge_split = (Rcpp::sample(std::distance(edges_split.first, edges_split.second), 1, false))(0);
+        int num_eligible_edges = std::distance(edges_split.first, edges_split.second);
+        for(auto i = edges_split.first; i != edges_split.second; ++i) {
+          //Rprintf("       %i -- %i\n", (*i).m_source, (*i).m_target);
+        }
+        int edge_split = /*(num_eligible_edges == 0) ? 0 :*/ ((Rcpp::sample(num_eligible_edges, 1, false))(0) - 1);
+        //Rprintf("       Removing the %i out edge\n", edge_split);
         for(int i = 0; i < edge_split; ++i) {
-          (edges_split.first)++;
+          ++(edges_split.first);
         }
         Edge edge_remove = *(edges_split.first);
         // Remove the edge
+        //Rprintf("       Removing edge\n");
         boost::remove_edge(edge_remove, currentGraph);
         // Update the membership and clusts
         updateMembership();
@@ -130,6 +178,7 @@ public:
         // [TODO] this loop is inefficient; some trickery involving
         // how Boost calculates connected components could do this faster
         // by directly going to which clusts were modified
+        //Rprintf("       Calculating old & new clust ids\n");
         new_clust_ids.clear();
         old_clust_ids.clear();
         int new_clust_num = 0;
@@ -147,29 +196,48 @@ public:
             old_clust_num = membership[*i];
           }
         }
+        //Rprintf("       Fetching clust ids\n");
         // Get the vertex ids belonging to the old and new cluster
         new_clust_ids = clusts[new_clust_num];
         old_clust_ids = clusts[old_clust_num];
     }
 
     void death() {
+      //Rprintf("       Entering a Death step\n");
+      //printMembership();
+      //Rprintf("       Current edges:\n");
+      //printEdges();
       storeGraphState();
+      auto edge_iter_full = boost::edges(*g).first;
+      auto edge_iter_full_copy = boost::edges(*g).first;
       // First, find which edges are between 2 clusters
       std::vector<bool> betweenness = getBetweenEdges();
+      //Rprintf("       Got betweenness\n");
       std::vector<int> between_edge_ids;
+      between_edge_ids.reserve(betweenness.size());
       for(int i = 0; i < betweenness.size(); ++i) {
         if(betweenness[i]) {
-          between_edge_ids.push_back(i);
+          between_edge_ids.emplace_back(i);
         }
+        //Rprintf("         Edge %i -- %i between: ",
+        //        (*edge_iter_full_copy).m_source,
+        //        (*edge_iter_full_copy).m_target);
+        //Rcout << betweenness[i] << ", " << std::endl;
+        ++edge_iter_full_copy;
       }
+      //Rprintf("\n       Found between edge ids: ");
+      /*for(int i = 0; i < between_edge_ids.size(); ++i) {
+        //Rprintf("%i, ", between_edge_ids[i]);
+      }*/
       // Randomly sample one of the edges to add back to currentGraph
-      int returning_edge_id = (Rcpp::sample(between_edge_ids.size(), 1, false))(0);
+      int returning_edge_id = between_edge_ids[(Rcpp::sample(between_edge_ids.size(), 1, false))(0) - 1];
+      //Rprintf("\n       Returning edge has id %i\n", returning_edge_id);
       // Get a reference to that edge
-      auto edge_iter_full = boost::edges(*g).first;
       for(int i = 0; i < returning_edge_id; ++i) {
         ++edge_iter_full;
       }
       Edge returning_edge = *edge_iter_full;
+      //Rprintf("       Found returning edge\n");
       // Record the clust ids of the vertices on either side of the new edge
       // (old cluster is the one with the larger id)
       int old_clust_num = membership[returning_edge.m_source];
@@ -185,14 +253,18 @@ public:
       old_clust_ids = clusts[old_clust_num];
       new_clust_ids = clusts[new_clust_num];
       new_clust_ids.insert(new_clust_ids.end(), old_clust_ids.begin(), old_clust_ids.end());
+      //Rprintf("       Recorded old and new clust_ids\n");
       // Add that edge back to the current graph
+      //Rprintf("       Adding edge: %i -- %i\n", returning_edge.m_source, returning_edge.m_target);
       boost::add_edge(returning_edge.m_source, returning_edge.m_target, currentGraph);
+      //Rprintf("       Readded edge\n");
       // Update the membership and clusts
       updateMembership();
     }
 
     void hyper() {
       storeGraphState();
+      //printMembership();
       // First, find which edges were connecting different clusters
       std::vector<bool> between_edge_ids = getBetweenEdges();
       // Clear the current graph state, reset it to the full graph
@@ -204,11 +276,11 @@ public:
         // If the edge connects 2 clusters, sample its weight Unif(0.5,1)
         // Otherwise sample its weight Unif(0,0.5)
         if(between_edge_ids[i]) {
-          boost::put(boost::edge_weight, currentGraph, currentGraph[*edge_iter_full], R::runif(0.5, 1.0));
+          boost::put(boost::edge_weight, currentGraph, *edge_iter_full, R::runif(0.5, 1.0));
         } else {
-          boost::put(boost::edge_weight, currentGraph, currentGraph[*edge_iter_full], R::runif(0.0, 0.5));
+          boost::put(boost::edge_weight, currentGraph, *edge_iter_full, R::runif(0.0, 0.5));
         }
-        edge_iter_full++;
+        ++edge_iter_full;
       }
       // Now that we have new edge weights for the full graph, find a new spanning tree
       minSpanTree();
@@ -218,21 +290,67 @@ public:
       for(auto i = edges_iter.first; i != edges_iter.second; ++i) {
         // If an edge's ends connects vertices of different membership; remove it
         if(membership[(*i).m_source] != membership[(*i).m_target]) {
-          boost::remove_edge(i, currentGraph);
+          boost::remove_edge(*i, currentGraph);
         }
       }
+      // Shouldn't be necessary; membership should not change after hyper step
+      //updateMembership();
+      //printGraph();
     }
+
+    void printGraph() {
+      Rprintf("\n");
+      Rprintf("Graph of size %i with %i clusters:\n", n, k);
+      auto edge_iters = boost::edges(currentGraph);
+      Rprintf("\n");
+      for(auto iter = edge_iters.first; iter != edge_iters.second; ++iter) {
+        Rprintf("%i -- %i\n", (*iter).m_source, (*iter).m_target);
+      }
+      Rprintf("\nClusts:\n");
+      for(int i = 0; i < clusts.size(); ++i) {
+        Rprintf("\n   Clust %i:\n   ", i);
+        for(int j = 0; j < clusts[i].size(); ++j) {
+          Rprintf("%i, ", (clusts[i])[j]);
+        }
+      }
+      Rprintf("\n Membership:\n");
+      for(int i : membership) {
+        Rprintf("%i ", i);
+      }
+      Rprintf("\n");
+    }
+
+    void printMembership() {
+      Rprintf("\n       Current Membership:\n       ");
+      for(int i : membership) {
+        Rprintf("%i ", i);
+      }
+      Rprintf("\n");
+    }
+
+    void printEdges() {
+      auto edge_iters = boost::edges(currentGraph);
+      Rprintf("\n");
+      for(auto iter = edge_iters.first; iter != edge_iters.second; ++iter) {
+        Rprintf("%i -- %i\n", (*iter).m_source, (*iter).m_target);
+      }
+    }
+
     // This only goes back by one step which is fine for the standard
     // set of birth, death, hyper moves following a rejection
     // However, for 'change' moves (death followed by birth) such as implemented
     // in BAST model, the function will have to store the original state and
     // reverse on its own since it would be going back by two steps
     void reverseMove() {
+      //Rprintf("     Reversing move\n");
       currentGraph = old_currentGraph;
       membership = old_membership;
       clusts = old_clusts;
       new_clust_ids = old_new_clust_ids;
       old_clust_ids = old_old_clust_ids;
+      n = old_n;
+      k = old_k;
+      //printMembership();
     }
 
 private:
@@ -241,6 +359,8 @@ private:
   std::vector<std::vector<int>> old_clusts;
   std::vector<int> old_new_clust_ids;
   std::vector<int> old_old_clust_ids;
+  int old_n;
+  int old_k;
 
   void storeGraphState() {
     old_currentGraph = currentGraph;
@@ -248,6 +368,8 @@ private:
     old_clusts = clusts;
     old_new_clust_ids = new_clust_ids;
     old_old_clust_ids = old_clust_ids;
+    old_n = n;
+    old_k = k;
   }
 
 };
@@ -278,9 +400,8 @@ NumericVector combine(const List& list) {
   return output;
 }
 
-
-
-Rcpp::List BASTIONfit(const Rcpp::IntegerMatrix &edges,
+// [[Rcpp::export]]
+Rcpp::List BASTIONfit_cpp(const Rcpp::IntegerMatrix &edges,
                       const Rcpp::NumericVector &weights,
                       const Rcpp::NumericVector &Y,
                       const int MCMC_iter,
@@ -288,7 +409,10 @@ Rcpp::List BASTIONfit(const Rcpp::IntegerMatrix &edges,
                       const int THIN,
                       const List init_values,
                       const List hyperpars) {
+//Rprintf("Entered function body\n");
+//Rcpp::Clock clock;
 // Fetch hyper parameters
+  //clock.tick("init_vals");
   // Fetch the initial values and hyper parameters
     const int k_max = hyperpars["k_max"];
     const int n_learners = hyperpars["n_learners"];
@@ -299,45 +423,57 @@ Rcpp::List BASTIONfit(const Rcpp::IntegerMatrix &edges,
 // Fetch initial values
     double sigmasq_y = init_values["sigmasq_y"];
     List mu = init_values["mu"];
-
+//Rprintf("Fetched initial values\n");
+  //clock.tock("init_vals");
+  //clock.tick("graph_build");
 // First, construct the graph from the edge list
   int n_edges = edges.rows();
   int n_verts = Y.size();
   // Create a vector of vertex pairs
   std::vector<std::pair<int, int>> edge_vec;
-  for(int i = 0; i < n_edges; i++) {
-    edge_vec.push_back(std::pair<int,int>(edges(i, 0), edges(i, 1)));
+  for(int i = 0; i < n_edges; ++i) {
+    edge_vec.emplace_back(std::make_pair(edges(i, 0), edges(i, 1)));
   }
+//Rprintf("Created edge vector\n");
   // We now have our full graph with initial weights
-  Graph g(edge_vec.begin(), edge_vec.end(), weights, n_verts);
+  Graph g(edge_vec.begin(), edge_vec.end(), as<std::vector<double>>(weights).begin(), n_verts);
+//Rprintf("Constructed graph\n");
+  //clock.tock("graph_build");
+  //clock.tick("learners_build");
   // Initialize a matrix to store each fitted value throughout the iterations
   // Each column represents a weak learner and each row represents a vertex
   NumericMatrix fitted_mus(n_verts, n_learners);
   // Vector of k's for evaluating log posterior
-  NumericVector K;
+  NumericVector K(n_learners);
   // Initialize each weak learner ([TODO] further consideration on whether to use
   // list vs vector to store each weak learner is warranted)
   std::vector<RSTlearner> WeakLearners;
-  for (int learner = 0; learner < n_learners; learner++) {
+  for (int learner = 0; learner < n_learners; ++learner) {
     RSTlearner Learner(&g);
-    WeakLearners.push_back(Learner);
-    K.push_back(Learner.k);
+    WeakLearners.emplace_back(Learner);
+    K(learner) = (Learner.k);
   }
-
+//Rprintf("Initialized Weak Learners\n");
   // Initialize some values to be used in the MCMC
   // Storage for output values
+  int out_length = (((MCMC_iter) - BURNIN) % THIN);
   List mu_out;
-  NumericVector sigmasq_y_out;
+  NumericVector sigmasq_y_out(out_length);
   List cluster_out;
-  NumericVector log_post_out;
+  NumericVector log_post_out(out_length);
   // There should be at most k_max <= n_verts clusters
   int max_clusts = (k_max <= n_verts)? k_max : n_verts;
   // 0 is a birth, 1 is a death, 2 is a change, 3 is a hyper
   NumericVector moves = {0, 1, 2, 3};
-  for (int iter = 0; iter < MCMC_iter; iter++) {
+  //clock.tock("learners_build");
+//Rprintf("Initialized MCMC Values\n");
+  for (int iter = 0; iter < MCMC_iter; ++iter) {
+    //Rprintf("Entering iteration %i\n", iter);
     NumericMatrix MembershipByLearner(n_verts, n_learners);
-      for (int learner = 0; learner < n_learners; learner++) {
+      for (int learner = 0; learner < n_learners; ++learner) {
+        //Rprintf(" Entering Weak Learner %i,", learner);
         int k_m = WeakLearners[learner].k;
+        //Rprintf(" Currently %i clusters\n", k_m);
         NumericVector LearnerResponse = Y - (rowSums(fitted_mus) - fitted_mus( _ , learner));
         NumericVector moveProbability;
         if(k_m == 1) {
@@ -350,6 +486,8 @@ Rcpp::List BASTIONfit(const Rcpp::IntegerMatrix &edges,
         int move = sample(moves, 1, false, moveProbability)(0);
         switch(move) {
           case 0: {
+            //Rprintf("   Performing a Birth step\n");
+            //clock.tick("birth");
             WeakLearners[learner].birth();
           // Calculate acceptance probability acc_prob
             // Log-prior ratio
@@ -386,9 +524,12 @@ Rcpp::List BASTIONfit(const Rcpp::IntegerMatrix &edges,
             if(R::runif(0, 1) > acc_prob) { // reject
               WeakLearners[learner].reverseMove();
             }
+            //clock.tock("birth");
             break;
           }
           case 1: {
+            //Rprintf("   Performing a Death step\n");
+            //clock.tick("death");
             WeakLearners[learner].death();
           // Calculate acceptance probability acc_prob
             // Log-prior ratio
@@ -422,11 +563,15 @@ Rcpp::List BASTIONfit(const Rcpp::IntegerMatrix &edges,
             // Calculate acceptance probability
             double log_acc_prob = fmin(0.0, log_A + log_P + log_L);
             double acc_prob = exp(log_acc_prob);
-            if(R::runif(0, 1) > acc_prob) // reject
-               WeakLearners[learner].reverseMove();
+            if(R::runif(0, 1) > acc_prob) {
+              WeakLearners[learner].reverseMove();
+            } // reject
+            //clock.tock("death");
             break;
           }
           case 2: {
+            //Rprintf("   Performing a Change step\n");
+            //clock.tick("change");
             // Store the current graph state (since it will be going forwards
             // by two steps)
             Graph old_currentGraph = WeakLearners[learner].currentGraph;
@@ -497,51 +642,60 @@ Rcpp::List BASTIONfit(const Rcpp::IntegerMatrix &edges,
               WeakLearners[learner].new_clust_ids = old_new_clust_ids;
               WeakLearners[learner].old_clust_ids = old_old_clust_ids;
             }
+            //clock.tock("change");
             break;
           }
           case 3: {
+            //clock.tick("hyper");
+            //Rprintf("   Performing a Hyper step\n");
             WeakLearners[learner].hyper();
+            //clock.tock("hyper");
             break;
           }
         }
+        //clock.tick("learner_update");
+        //Rprintf("   Updating values\n");
         // Update the learner column of fitted_mus w/ new fitted mus
         k_m = WeakLearners[learner].k;
         NumericVector membership = wrap(WeakLearners[learner].membership);
-        NumericVector csize;
-        NumericVector ClustResponse;
-        for(int i = 0; i < WeakLearners[learner].clusts.size(); i++) {
-          csize.push_back(WeakLearners[learner].clusts[i].size());
+        NumericVector csize(WeakLearners[learner].clusts.size());
+        NumericVector ClustResponse(WeakLearners[learner].clusts.size());
+        for(int i = 0; i < WeakLearners[learner].clusts.size(); ++i) {
+          csize(i) = (WeakLearners[learner].clusts[i].size());
           NumericVector ClustIndices = wrap(WeakLearners[learner].clusts[i]);
           NumericVector ResponseByClust = LearnerResponse[ClustIndices];
-          ClustResponse.push_back(sum(ResponseByClust));
+          ClustResponse(i) = (sum(ResponseByClust));
         }
         NumericVector Qinv_diag = 1/((csize/sigmasq_y) + 1/(sigmasq_mu));
         NumericVector b = (Qinv_diag * ClustResponse) / sigmasq_y;
-        NumericVector NewMus;
-        for(int i = 0; i < k_m; i++) {
-          NewMus.push_back(R::rnorm(b[i], sqrt(Qinv_diag)[i]));
+        NumericVector NewMus(k_m);
+        for(int i = 0; i < k_m; ++i) {
+          NewMus(i) = (R::rnorm(b[i], sqrt(Qinv_diag)[i]));
         }
         mu[learner] = NewMus;
         std::vector<double> new_response;
-        for(int i = 0; i < n_verts; i++) {
-          new_response.push_back(NewMus[WeakLearners[learner].membership[i]]);
+        for(int i = 0; i < n_verts; ++i) {
+          new_response.emplace_back(NewMus[WeakLearners[learner].membership[i]]);
         }
         NumericVector NewResponse = wrap(new_response);
         fitted_mus( _ , learner) = NewResponse;
         MembershipByLearner( _ , learner) = membership;
         K[learner] = WeakLearners[learner].k;
+        //clock.tock("learner_update");
       }
   // Update sigma squared of y
     // Simplification from R logic:
     // Y_hat = fitted_mus[, n_learners - 1] + Y - (Y - (rowsums(fitted_mus) - fitted_mus[, n_learners - 1]))
     // = fitted_mus[, n_learners - 1] + Y - Y + rowsums(fitted_mus) - fitted_mus[, n_learners - 1]
     // = rowsums(fitted_mus)
+    //Rprintf(" Updating Iteration Values\n");
+    //clock.tick("iter_update");
     NumericVector Y_hat = rowSums(fitted_mus);
     double scale = 1/(0.5*(nu*lambda_s + sum((Y - Y_hat)*(Y - Y_hat))));
     double shape = (double)(n_verts+nu)/2.0;
     sigmasq_y = 1/(R::rgamma(shape, scale));
     // Save the result
-    if((iter > BURNIN) && (((iter - BURNIN) % THIN) == 0)) {
+    if(((iter+1) > BURNIN) && ((((iter+1) - BURNIN) % THIN) == 0)) {
       mu_out.push_back(mu);
       sigmasq_y_out.push_back(sigmasq_y);
       cluster_out.push_back(MembershipByLearner);
@@ -559,14 +713,18 @@ Rcpp::List BASTIONfit(const Rcpp::IntegerMatrix &edges,
       // Add the two
       log_post_out.push_back(log_prior+log_like);
     }
+    //clock.tock("iter_update");
   }
+//Rprintf("Finished MCMC Loop\n");
+  //clock.stop("BASTIONfit_C_timings");
   // Return the result
   List OutputList = List::create(
     Named("mu_out") = mu_out,
-    Named("cluster_out") = cluster_out,
     Named("sigmasq_y_out") = sigmasq_y_out,
+    Named("cluster_out") = cluster_out,
     Named("log_post_out") = log_post_out
   );
+  //Rprintf("Finished computations");
   return(OutputList);
 }
 

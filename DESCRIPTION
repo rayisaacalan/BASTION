@@ -13,8 +13,9 @@ Encoding: UTF-8
 LazyData: true
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.1.2
+SystemRequirements: C++11
 LinkingTo: 
-    Rcpp, BH
+    Rcpp, BH, RcppClock
 Imports: 
     Rcpp, igraph, cccd, stats
 Suggests: 
