@@ -19,5 +19,5 @@ LinkingTo:
 Imports: 
     Rcpp, igraph, cccd, stats
 Suggests: 
-    rmarkdown, knitr, ggplot2, ggraph, microbenchmark, Rfast, fdaPDE, FNN, Matrix, fields, mgcv, xtable
+    rmarkdown, knitr, ggplot2, ggraph, gridExtra, microbenchmark, Rfast, fdaPDE, FNN, Matrix, fields, mgcv, xtable
 VignetteBuilder: knitr

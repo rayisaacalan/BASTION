@@ -111,7 +111,7 @@ BASTIONfit_C = function(Y, graph, init_vals, hyperpars, MCMC, BURNIN, THIN, seed
     stop("Not all edges have a weight")
   }
   result = BASTIONfit_cpp(Edges, Weights, Y, MCMC, BURNIN, THIN, init_vals_C, hyperpars_C)
-  result$cluster_out = aperm(simplify2array(result$cluster_out), c(3,1,2))
+  result$cluster_out = aperm(simplify2array(result$cluster_out), c(3,1,2)) + 1
   mode(result$cluster_out) = 'integer'
   return(result)
 }

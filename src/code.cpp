@@ -658,6 +658,10 @@ Rcpp::List BASTIONfit_cpp(const Rcpp::IntegerMatrix &edges,
         // Update the learner column of fitted_mus w/ new fitted mus
         k_m = WeakLearners[learner].k;
         NumericVector membership = wrap(WeakLearners[learner].membership);
+        if((Rcpp::max(membership) + 1) > k_m) {
+          WeakLearners[learner].printGraph();
+          stop("Something has gone wrong with connected clusters!");
+        }
         NumericVector csize(WeakLearners[learner].clusts.size());
         NumericVector ClustResponse(WeakLearners[learner].clusts.size());
         for(int i = 0; i < WeakLearners[learner].clusts.size(); ++i) {
@@ -696,7 +700,7 @@ Rcpp::List BASTIONfit_cpp(const Rcpp::IntegerMatrix &edges,
     sigmasq_y = 1/(R::rgamma(shape, scale));
     // Save the result
     if(((iter+1) > BURNIN) && ((((iter+1) - BURNIN) % THIN) == 0)) {
-      mu_out.push_back(mu);
+      mu_out.push_back(clone(mu));
       sigmasq_y_out.push_back(sigmasq_y);
       cluster_out.push_back(MembershipByLearner);
     // Evaluate log posterior
