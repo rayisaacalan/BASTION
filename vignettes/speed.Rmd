@@ -21,6 +21,7 @@ knitr::opts_chunk$set(
 library(BASTION)
 library(ggplot2)
 library(ggraph)
+library(gridExtra)
 library(igraph)
 library(microbenchmark)
 library(Rfast)
@@ -48,39 +49,35 @@ The code for the paper's implementation can be found [in this GitHub repository]
 # function to returns the index of the triangle containing the point
 # returns multiple triangles for points on edges if all_tri == TRUE
 # code adapted from fdaPDE
-R_insideIndex2 <- function (mesh, location, all_tri = FALSE) {
-  #  insideIndex returns the index of the triangle containing the point
-  # (X,Y) if such a triangle exists, and NaN otherwise.
-  #  TRICOEF may have already been calculated for efficiency,
-  #  but if the function is called with four arguments, it is calculated.
+R_insideIndex2 <- function (mesh0, location, all_tri = FALSE) {
   eps = 2.2204e-016
   small = 10000 * eps
   
-  nodes = mesh$nodes
-  triangles = mesh$triangles
+  nodes = mesh0$nodes
+  triangles = mesh0$triangles
   X = location[1]
   Y = location[2]
   
   ntri   = dim(triangles)[[1]]
   indtri   = matrix(1:ntri, ncol = 1)
   
-  #  compute coefficients for computing barycentric coordinates if needed
+  # compute coefficients for computing barycentric coordinates if needed
   
-  tricoef = fdaPDE:::R_tricoefCal(mesh)
+  tricoef = fdaPDE:::R_tricoefCal(mesh0)
   
-  #  compute barycentric coordinates
+  # compute barycentric coordinates
   r3 = X - nodes[triangles[, 3], 1]
   s3 = Y - nodes[triangles[, 3], 2]
   lam1 = (tricoef[, 4] * r3 - tricoef[, 2] * s3)
   lam2 = (-tricoef[, 3] * r3 + tricoef[, 1] * s3)
   lam3 = 1 - lam1 - lam2
   
-  #  test these coordinates for a triple that are all between 0 and 1
+  # test these coordinates for a triple that are all between 0 and 1
   int  = (-small <= lam1 & lam1 <= 1 + small) &
     (-small <= lam2 & lam2 <= 1 + small) &
     (-small <= lam3 & lam3 <= 1 + small)
   
-  #  return the index of this triple, or NaN if it doesn't exist
+  # return the index of this triple, or NaN if it doesn't exist
   indi = indtri[int]
   if (length(indi) < 1)
   {
@@ -631,6 +628,208 @@ plotField <- function(coords, Data, col_lim = NULL, legend_name = NULL, title = 
 }
 ```
 
+```{r prediction-funcs, include=FALSE}
+predictBAST <- function(mcmc_res, coords, coords_new, method = 'soft-knn', 
+                        mesh = NULL, return_type = 'mean', weighting = 'uniform', 
+                        cdist_mat = NULL, k_nn = 5, seed = 12345) {
+  set.seed(seed)
+  
+  # get posterior mean in-sample prediction
+  npost = length(mcmc_res$log_post_out)
+  cluster_out = mcmc_res$cluster_out
+  mu_out = mcmc_res$mu_out
+  
+  M = dim(cluster_out)[3]
+  n = dim(cluster_out)[2]
+  
+  mu_all = array(0, dim = c(npost, n, M))
+  for(i in 1:npost) {
+    cluster_i = cluster_out[i, , , drop = F]
+    mu_i = mu_out[[i]]
+    mu_all_i = matrix(0, ncol = M, nrow = n) # n*M matrix
+    for(m in 1:M) {
+      mu_all_i[, m] = mu_i[[m]][cluster_i[1, , m]]
+    }
+    mu_all[i, , ] = mu_all_i
+  }
+  Y_hat_all = t(apply(mu_all, c(1, 2), sum))
+  
+  if(method == 'soft-mesh' | method == 'soft-knn') {
+    ## soft prediction
+    ## method == 'soft-mesh': soft prediction using FEM mesh (for 2-d domains only)
+    ## method == 'soft-knn': soft prediction based on KNN graph
+    
+    Y_new_hat = softPredict2(mu_all, coords, coords_new, method, mesh,
+                             return_type, weighting, cdist_mat, k_nn)
+  } else {
+    stop('Unsupported method')
+  }
+  
+  return(Y_new_hat)
+}
+
+# function to get adjacency list for boundary mesh nodes
+getBndAdjList <- function(mesh) {
+  n_int = mesh$n_int  # number of interior nodes
+  n_bnd = nrow(mesh$nodes) - n_int  # number of boundary nodes
+  edge_list = mesh$edges[mesh$bnd_edges, ]
+  
+  adj_list = rep(list(c()), n_bnd)  # empty list
+  names(adj_list) = as.character((n_int + 1):(n_int + n_bnd))
+  for(i in 1:nrow(edge_list)) {
+    endpoints = edge_list[i, ]
+    v_bnd = max(endpoints); v_int = min(endpoints)
+    if(v_int > n_int) next
+    v_bnd_char = as.character(v_bnd)
+    if(is.null(adj_list[[v_bnd_char]])) {
+      adj_list[[v_bnd_char]] = c(v_int)
+    } else {
+      adj_list[[v_bnd_char]] = c(adj_list[[v_bnd_char]], v_int)
+    }
+  }
+  return(adj_list)
+}
+
+# function to get neighbor probability matrix for new locations given a mesh
+# nn_prob[i, j]: probability that node j is used for prediction at new location i
+# ncol(nn_prob) == number of nodes in mesh (including boundary nodes)
+getNNProb <- function(mesh, coords_new, type = 'uniform', b = 1) {
+  if(type == 'uniform' | type == 'distance') {
+    tri_idx = apply(coords_new, 1, function(loc) R_insideIndex2(mesh, loc, all_tri = T))
+    nn_prob = matrix(0, nrow = nrow(coords_new), ncol = nrow(mesh$nodes))
+    
+    n_nodes = nrow(mesh$nodes); n_int = mesh$n_int
+    if(type == 'distance') {
+      weights = 1 / as.matrix(rdist(coords_new, mesh$nodes)) ^ b
+    } else {
+      weights = matrix(1, nrow = nrow(coords_new), ncol = nrow(mesh$nodes))
+    }
+    
+    if(class(tri_idx) == 'list') {
+      for(i in 1:nrow(coords_new)) {
+        nn_idx = mesh$triangles[tri_idx[[i]], ]
+        nn_idx = unique(c(nn_idx))
+        # use boundary nodes only if all neighbors are on boundary
+        if(!all(nn_idx > n_int))
+          nn_idx = nn_idx[nn_idx <= n_int]
+        nn_prob[i, nn_idx] = weights[i, nn_idx]
+      }
+      
+    } else { # tri_idx is a vector
+      for(i in 1:nrow(coords_new)) {
+        nn_idx = mesh$triangles[tri_idx[i], ]
+        # use boundary nodes only if all neighbors are on boundary
+        if(!all(nn_idx > n_int))
+          nn_idx = nn_idx[nn_idx <= n_int]
+        nn_prob[i, nn_idx] = weights[i, nn_idx]
+      }
+    }
+    
+    # normalize nn_prob
+    nn_prob = nn_prob / rowSums(nn_prob)
+    
+  }  else {
+    stop('Unsupported weighting types')
+  }
+  
+  return(nn_prob)
+}
+
+# extend prediction to boundary nodes of a mesh
+getBndPred <- function(Y_hat, mesh, adj_list_bnd = NULL) {
+  if(is.null(adj_list_bnd))
+    adj_list_bnd = getBndAdjList(mesh)
+  n = length(Y_hat)  # number of interior nodes
+  n_bnd = length(adj_list_bnd)  # number of boundary nodes
+  Y_hat_bnd = rep(0, n_bnd)
+  for(i in (n + 1):(n + n_bnd))
+    Y_hat_bnd[i - n] = mean(Y_hat[ adj_list_bnd[[as.character(i)]] ])
+  return(Y_hat_bnd)
+}
+
+
+# helper function for soft prediction
+softPredict2 <- function(mu_all, coords, coords_new, method = 'soft-knn', 
+                         mesh = NULL, return_type = 'mean', 
+                         weighting = 'uniform', cdist_mat = NULL, k_nn = 5) {
+  extend_bnd = F  # do we have to extend prediction to boundary nodes in mesh
+  if(method == 'soft-mesh') {
+    # soft prediction using mesh
+    # require(fdaPDE)
+    if(is.null(mesh)) 
+      stop("Missing 'mesh'.")
+    
+    # get neighbor choices for new locations
+    nn_prob = getNNProb(mesh, coords_new, weighting)
+    nn_prob = round(nn_prob, 8)
+    
+    # check if boundary nodes are useful for prediction
+    n_int = mesh$n_int
+    if(any(nn_prob[, (n_int+1):ncol(nn_prob)] > 0))
+      extend_bnd = T
+    
+    # pre-compute adjacency list for boundary mesh nodes
+    if(extend_bnd)
+      adj_list_bnd = getBndAdjList(mesh)
+    
+  } else if(method == 'soft-knn') {
+    # soft prediction using constrained KNN
+    require(fields)
+    
+    if(is.null(cdist_mat))
+      cdist_mat = as.matrix(rdist(coords_new, coords))
+    nn_list = KNNGraph(cdist_mat, k_nn, cross_dist = T, return_graph = F)
+
+    # get probability for each neighbor
+    n_new = nrow(coords_new)
+    nn_prob = matrix(0, nrow = n_new, ncol = nrow(coords))
+    if(weighting == 'uniform') {
+      for(i in 1:n_new)
+        nn_prob[i, nn_list[[i]] ] = 1
+    } else if(weighting == 'distance') {
+      # deal with zero distance
+      cdist_mat[cdist_mat == 0] = 1e-9
+      for(i in 1:n_new)
+        nn_prob[i, nn_list[[i]] ] = 1 / cdist_mat[i, nn_list[[i]] ]
+    } else {
+      stop('Unsupported weighting types')
+    }
+    # normalize nn_prob
+    nn_prob = nn_prob / rowSums(nn_prob)
+  }
+  
+  n_nodes = ncol(nn_prob)
+  npost = dim(mu_all)[1]
+  M = dim(mu_all)[3]
+  Y_new_all = matrix(0, nrow = nrow(coords_new), ncol = npost)
+  
+  
+  for(i in 1:npost) {
+    # sample neighbors
+    nn = t(apply(nn_prob, 1, function(p) sample.int(n_nodes, M, replace = T, prob = p)))
+    
+    mu_i = mu_all[i, , ]
+    
+    if(method == 'soft-mesh' & extend_bnd) {
+      # extend mu to boundary nodes in FEM mesh
+      mu_i_bnd = apply(mu_i, 2, getBndPred, mesh = mesh, adj_list_bnd = adj_list_bnd)
+      mu_i = rbind(mu_i, mu_i_bnd)
+    }
+    
+    mu_new_i = matrix(0, nrow = nrow(coords_new), ncol = M)
+    for(m in 1:M)
+      mu_new_i[, m] = mu_i[nn[, m], m]
+    Y_new_all[, i] = rowSums(mu_new_i)
+  }
+  if(return_type == 'mean') {
+    Y_new_hat = rowMeans(Y_new_all)
+  } else {
+    Y_new_hat = Y_new_all
+  }
+  return(Y_new_hat)
+}
+```
+
 First, we'll read in the processed data (information on this can be found in the AralSea.R file at the GitHub repository above)
 
 ```{r get-aral-data}
@@ -982,48 +1181,6 @@ BASTIONfit = function(Y, graph, init_vals, hyperpars, MCMC, BURNIN, THIN, seed =
 
 Let's take a look at the speed difference. Note that the code below is by default not run at the time of this vignette's execution as it is extremely slow. It instead loads the results precomputed on a system with an AMD Ryzen 7 3700X processor and 32GB of RAM.
 
-```{r aral-speed, eval=FALSE}
-aral_speed = microbenchmark(
-  bastfit = fitBAST(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345),
-  bastionfit = BASTIONfit(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345),
-  times = 5
-)
-save(aral_speed, file = "aral_speed_results.Rda")
-```
-
-
-```{r aral-speed-xtable, results='asis'}
-datapath = paste0(getwd(), "/aral_speed_results.Rda")
-attach(what = datapath, name = "precomputed")
-speed_table1 = xtable(summary(aral_speed), caption = "Speed comparison (seconds) between the different native R implementations of the BAST model.")
-detach(precomputed)
-print(speed_table1, type = "html", comment = FALSE)
-```
-
-
-
-Unsurprisingly, the speed leaves much to be desired with even the fastest possible fitting time coming in at almost 7 minutes on a relatively small data set. Further, the original code from the paper is more performant at the cost of being more specific to this particular setup. Let's take a look at the performance after rewriting in C++ using Rcpp:
-
-
-```{r, eval = FALSE}
-bastionfit_C = BASTIONfit_C(Y_std, aral_graph, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345)
-```
-
-```{r, eval = FALSE}
-library(RcppClock)
-load("aral_cpp_speed_profile.Rda")
-cpp_df = data.frame(process = summary(BASTIONfit_C_timings)$ticker,
-                    time_spent_s = summary(BASTIONfit_C_timings)$mean * summary(BASTIONfit_C_timings)$neval * 0.000001)
-cpp_df
-```
-
-```{r, eval = FALSE}
-bastfit = fitBAST(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345)
-bastionfit = BASTIONfit(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345)
-save(bastfit, bastionfit, file = "aral_fits_no_c.Rda")
-```
-
-
 ```{r aral-speed-full, eval = FALSE}
 aral_speed_full = microbenchmark(
   bastfit = fitBAST(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345),
@@ -1035,15 +1192,6 @@ aral_speed_full = microbenchmark(
 save(aral_speed_full, file = "aral_speed_results_full.Rda")
 ```
 
-
-```{r test-cpp-speed-one, eval = FALSE}
-test_cpp_speed = microbenchmark(
-  bastionfit_C = BASTIONfit_C(Y_std, aral_graph, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345),
-  times = 1
-)
-```
-
-
 ```{r aral-speed-full-xtable, results='asis'}
 datapath = paste0(getwd(), "/aral_speed_results_full.Rda")
 attach(what = datapath, name = "precomputed")
@@ -1052,63 +1200,73 @@ detach(precomputed)
 print(speed_table2, type = "html", comment = FALSE)
 ```
 
+Unsurprisingly, the speed with an R implementation leaves much to be desired with even the fastest possible fitting time coming in at almost 7 minutes on a relatively small data set. Further, the original code from the paper is more performant at the cost of being more specific to this particular setup. We see a huge improvement from moving to C++ due to the the power of the Boost graph library and generally lower function call overhead compared to R.
+
+As a sanity check, let's see the predictive field generated by the different models to see that they are mostly equivalent. Note that despite setting the same seed, the results will still be slightly different due to having a different sequence of RNG function calls. However, each function individually will return the same results given the same seed, including the one implemented in C++ which uses R's random number generation and not Boost's.
+
+The code block below is not executed at the time of knitting in the interest of vignette compilation speed.
 
 ```{r, eval = FALSE}
-set.seed(12345678)
-x = runif(1000, min = -10, max = 10)
-y = runif(1000, min = -10, max = 10)
-data_full = data.frame(x, y)
-test_coords = data_full[x^2 + y^2 >= 16, ]
-test_graph = constructGraph(test_coords, 4)
-# Not run: plot this graph using ggraph package
-# ggraph(test_graph, layout = test_coords) + geom_node_point() + geom_edge_link0()
-n = igraph::vcount(test_graph)
-z = 1.2^(test_coords$x) + 
-  (test_coords$y)^2 - 
-  1000*(test_coords$x > test_coords$y) + 
-  4*test_coords$x*test_coords$y # response
-
-# ggraph(test_graph, layout = test_coords) + 
-#   geom_edge_link0(edge_alpha = 0.1) + 
-#   geom_node_point(aes(color = z)) +
-#   scale_color_viridis()
-
-
-M = 3      # number of weak learners
-k_max = 6   # maximum number of clusters per weak learner
-mu = list() # initial values of mu
-cluster = matrix(1, nrow = n, ncol = M)  # initial cluster memberships
-for(m in 1:M) {
-  mu[[m]] = c(0)
-}
-
-init_val = list()
-init_val[['mu']] = mu
-init_val[['sigmasq_y']] = 1
-
-
-# find lambda_s
-nu = 3; q = 0.9
-quant = qchisq(1-q, nu)
-lambda_s = quant * var(z) / nu
-
-hyperpar = c()
-hyperpar['sigmasq_mu'] = (0.5/(2*sqrt(M)))^2
-hyperpar['lambda_s'] = lambda_s
-hyperpar['nu'] = nu
-hyperpar['lambda_k'] = 4
-hyperpar['M'] = M
-hyperpar['k_max'] = k_max
-
-# MCMC parameters
-# number of posterior samples = (MCMC - BURNIN) / THIN
-MCMC = 1000    # MCMC iterations
-BURNIN = 500  # burnin period length
-THIN = 5        # thinning intervals
-
-q = BASTIONfit_C(z, test_graph, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345)
+bastionfit_C = BASTIONfit_C(Y_std, aral_graph, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345)
+save(bastionfit_C, file = "aral_fit_C.Rda")
+bastfit = fitBAST(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345)
+bastionfit = BASTIONfit(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345)
+save(bastfit, bastionfit, file = "aral_fits_no_c.Rda")
 ```
 
+Next, we'll form the prediction field (a grid in this case due to the nature of our data).
 
+```{r prediction-Y}
+load("aral_fit_C.Rda")
+load("aral_fits_no_c.Rda")
 
+mesh = gen2dMesh(coords, bnd)
 
+prediction_scheme = function(fitted_model) {
+  Y_grid_all = predictBAST(fitted_model, 
+                           coords, 
+                           coords_grid, 
+                           method = 'soft-mesh', 
+                           mesh = mesh, 
+                           weighting = 'uniform', 
+                           return_type = 'all', 
+                           seed = 12345)
+  Y_grid_all = apply(Y_grid_all, 2, unstandardize, std_par = std_par)
+
+  # use posterior mean as predictor
+  Y_grid = rowMeans(Y_grid_all)
+  
+  # back to original scale
+  Y_grid = Y_grid + mean_Y
+  return(Y_grid)
+}
+
+# Predict for each of the 3 different models
+Y_grid_BAST = prediction_scheme(bastfit)
+Y_grid_BASTION = prediction_scheme(bastionfit)
+Y_grid_BASTION_C = prediction_scheme(bastionfit_C)
+```
+
+Finally, we'll plot the predictive field for each model as well as a reminder of what the true data looked like:
+
+```{r plot-prediction-Y, fig.width=10, fig.height=10}
+plot_bast = plotField(coords_grid, Y_grid_BAST, title = 'Predictive Field - BAST') +
+  xlab('Scaled Long.') + ylab('Scaled Lat.')
+
+plot_bastion = plotField(coords_grid, Y_grid_BASTION, title = 'Predictive Field - BASTION (R)') +
+  xlab('Scaled Long.') + ylab('Scaled Lat.')
+
+plot_bastion_c = plotField(coords_grid, Y_grid_BASTION_C, title = 'Predictive Field - BASTION (C++)') +
+  xlab('Scaled Long.') + ylab('Scaled Lat.')
+
+plot_true = ggplot() + 
+  geom_boundary(bnd) +
+  geom_point(aes(x = lon, y = lat, col = Y), data = as.data.frame(coords)) +
+  scale_color_gradientn(colours = rainbow(5), name = 'Y') +
+  labs(x = 'Scaled Lon.', y = 'Scaled Lat.') + 
+  ggtitle('Observed Data')
+
+grid.arrange(plot_true, plot_bast, plot_bastion, plot_bastion_c)
+```
+
+As we can see, the predictive fields for the different implementations are virtually identical.
