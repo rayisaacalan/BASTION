@@ -475,7 +475,7 @@ graphChange = function(graph, membership, full_graph) {
   # Return the result
   return(list(graph = reborn_graph$graph, membership = reborn_graph$membership,
               new_dclust_ids = dead_graph$new_clust_ids, old_dclust_ids = dead_graph$old_clust_ids,
-              new_bclust_ids = reborn_graph$new_clust_ids, new_bclust_ids = reborn_graph$old_clust_ids))
+              new_bclust_ids = reborn_graph$new_clust_ids, old_bclust_ids = reborn_graph$old_clust_ids))
 }
 
 #' Generate new spanning trees for each cluster
