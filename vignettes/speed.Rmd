@@ -1216,7 +1216,10 @@ save(bastfit, bastionfit, file = "aral_fits_no_c.Rda")
 Next, we'll form the prediction field (a grid in this case due to the nature of our data).
 
 ```{r prediction-Y, include=FALSE}
+load("aral_fit_C.Rda")
+load("aral_fits_no_c.Rda")
 mesh = gen2dMesh(coords, bnd)
+
 
 prediction_scheme = function(fitted_model) {
   Y_grid_all = predictBAST(fitted_model, 
@@ -1233,7 +1236,7 @@ prediction_scheme = function(fitted_model) {
   Y_grid = rowMeans(Y_grid_all)
   
   # back to original scale
-  Y_grid = Y_grid + mean(response)
+  #Y_grid = Y_grid + mean(response)
   return(Y_grid)
 }
 
