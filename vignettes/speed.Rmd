@@ -2,7 +2,6 @@
 title: "Speed Comparisons"
 output: rmarkdown::html_vignette
 author: "Ray, Isaac"
-date: "January 2022"
 vignette: >
   %\VignetteIndexEntry{speed}
   %\VignetteEngine{knitr::rmarkdown}
@@ -1216,10 +1215,7 @@ save(bastfit, bastionfit, file = "aral_fits_no_c.Rda")
 
 Next, we'll form the prediction field (a grid in this case due to the nature of our data).
 
-```{r prediction-Y}
-load("aral_fit_C.Rda")
-load("aral_fits_no_c.Rda")
-
+```{r prediction-Y, include=FALSE}
 mesh = gen2dMesh(coords, bnd)
 
 prediction_scheme = function(fitted_model) {
@@ -1237,7 +1233,7 @@ prediction_scheme = function(fitted_model) {
   Y_grid = rowMeans(Y_grid_all)
   
   # back to original scale
-  Y_grid = Y_grid + mean_Y
+  Y_grid = Y_grid + mean(response)
   return(Y_grid)
 }
 
