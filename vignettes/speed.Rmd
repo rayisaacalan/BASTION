@@ -1,0 +1,1271 @@
+---
+title: "Speed Comparisons"
+output: rmarkdown::html_vignette
+author: "Ray, Isaac"
+vignette: >
+  %\VignetteIndexEntry{speed}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+
+```
+
+```{r setup, include = FALSE}
+library(BASTION)
+library(ggplot2)
+library(ggraph)
+library(gridExtra)
+library(igraph)
+library(microbenchmark)
+library(Rfast)
+library(xtable)
+library(fields)
+library(Matrix)
+library(FNN)
+library(mgcv)
+library(fdaPDE)
+```
+
+In the effort to improve the computational efficiency of the BAST model, this vignette summarizes various implementations and their speed. 
+
+First, a speed comparison on the remote sensed chlorophyll data in the Aral sea; the setup of this application is described in section 4.3 of the following paper:
+
+[Luo, Z. T., Sang, H., & Mallick, B. (2021) BAST: Bayesian Additive Regression Spanning Trees for Complex Constrained Domain. Advances in Neural Information Processing Systems 34 (NeurIPS 2021)](https://proceedings.neurips.cc/paper/2021/hash/00b76fddeaaa7d8c2c43d504b2babd8a-Abstract.html)
+
+The code for the paper's implementation can be found [in this GitHub repository](https://github.com/ztluostat/BAST). The majority of the code for this example is taken from this repository.
+
+
+```{r ztluo-funcs, include=FALSE}
+### Redefine functions related to FEM ###
+### code adapted from fdaPDE ###
+
+# function to returns the index of the triangle containing the point
+# returns multiple triangles for points on edges if all_tri == TRUE
+# code adapted from fdaPDE
+R_insideIndex2 <- function (mesh0, location, all_tri = FALSE) {
+  eps = 2.2204e-016
+  small = 10000 * eps
+  
+  nodes = mesh0$nodes
+  triangles = mesh0$triangles
+  X = location[1]
+  Y = location[2]
+  
+  ntri   = dim(triangles)[[1]]
+  indtri   = matrix(1:ntri, ncol = 1)
+  
+  # compute coefficients for computing barycentric coordinates if needed
+  
+  tricoef = fdaPDE:::R_tricoefCal(mesh0)
+  
+  # compute barycentric coordinates
+  r3 = X - nodes[triangles[, 3], 1]
+  s3 = Y - nodes[triangles[, 3], 2]
+  lam1 = (tricoef[, 4] * r3 - tricoef[, 2] * s3)
+  lam2 = (-tricoef[, 3] * r3 + tricoef[, 1] * s3)
+  lam3 = 1 - lam1 - lam2
+  
+  # test these coordinates for a triple that are all between 0 and 1
+  int  = (-small <= lam1 & lam1 <= 1 + small) &
+    (-small <= lam2 & lam2 <= 1 + small) &
+    (-small <= lam3 & lam3 <= 1 + small)
+  
+  # return the index of this triple, or NaN if it doesn't exist
+  indi = indtri[int]
+  if (length(indi) < 1)
+  {
+    ind = NA
+  } else if (all_tri) {
+    ind = indi
+  } else{
+    ind = min(indi)
+  }
+  
+  return(ind)
+}
+### Functions for fitting BAST -----
+
+# function to get whether an edge is within a cluster or bewteen two clusters
+getEdgeStatus <- function(membership, inc_mat) {
+  membership_head = membership[inc_mat[, 1]]
+  membership_tail = membership[inc_mat[, 2]]
+  edge_status = rep('w', nrow(inc_mat))
+  edge_status[membership_head != membership_tail] = 'b'
+  return(edge_status)
+}
+
+# function to split an existing cluster given MST
+# subgraphs: cluster_id -> subgraph
+# cluster: vid -> cluster_id
+splitCluster <- function(mstgraph, k, subgraphs, csize) { 
+  clust_split = sample.int(k, 1, prob = csize - 1)
+  mst_subgraph = subgraphs[[clust_split]]
+  
+  edge_cutted = E(mst_subgraph)[sample.int(csize[clust_split]-1, 1)]
+  eid_cutted = edge_cutted$eid
+  mst_subgraph = delete.edges(mst_subgraph, edge_cutted)
+  connect_comp = components(mst_subgraph)
+  idx_new = (connect_comp$membership == 2)
+  vid_new = V(mst_subgraph)$vid[idx_new]
+  vid_old = V(mst_subgraph)$vid[!idx_new]
+  
+  return(list(vid_old = vid_old, vid_new = vid_new, eid_cutted = eid_cutted,
+              clust_old = clust_split, idx_new = idx_new))
+}
+
+# function to update if a split move is accepted
+updateSplit <- function(split_res, subgraphs, k, csize, eid_btw_mst, cluster, edge_status,
+                        adj_list, adj_edge_list) {
+  clust_split = split_res$clust_old
+  vid_old = split_res$vid_old; vid_new = split_res$vid_new
+  
+  subgraph_split = subgraphs[[clust_split]]
+  idx_new = split_res$idx_new
+  subgraphs[[clust_split]] = induced_subgraph(subgraph_split, !idx_new)  # subgraph of old cluster
+  subgraphs[[k+1]] = induced_subgraph(subgraph_split, idx_new) # subgraph of new cluster
+  
+  csize[clust_split] = length(vid_old)
+  csize[k+1] = length(vid_new)
+  
+  cluster[vid_new] = k + 1
+  eid_btw_mst = c(eid_btw_mst, split_res$eid_cutted)
+  
+  # update edge status
+  adj_vid_old = unlist(adj_list[vid_old])
+  adj_eid_old = unlist(adj_edge_list[vid_old])
+  clust_adj_old = cluster[adj_vid_old]
+  idx_btw = which(clust_adj_old != clust_split)
+  eid_btw = adj_eid_old[idx_btw]
+  edge_status[eid_btw] = 'b'
+  
+  return(list(subgraphs = subgraphs, csize = csize, cluster = cluster,
+              eid_btw_mst = eid_btw_mst, estatus = edge_status))
+}
+
+# function to merge two existing clusters
+mergeCluster <- function(mstgraph, eid_btw_mst, subgraphs, csize, cluster, edge_list, 
+                         change = F) {
+  # edge for merging
+  edge_merge = sample.int(length(eid_btw_mst), 1)
+  # update cluster information
+  # clusters of endpoints of edge_merge
+  eid_merge = eid_btw_mst[edge_merge]
+  clusters_merge = cluster[edge_list[eid_merge, ]]
+  clusters_merge = sort(clusters_merge)
+  c1 = clusters_merge[1]; c2 = clusters_merge[2] # note c1 < c2
+  # merge c2 to c1
+  
+  # vid of vertices in c2
+  vid_old = V(subgraphs[[c2]])$vid
+  # vid in merged cluster
+  vid_new = c(V(subgraphs[[c1]])$vid, vid_old)
+  
+  csize_new = NULL; subgraphs_new = NULL
+  if(change) {
+    subgraphs_new = subgraphs
+    subgraphs_new[[c1]] = induced_subgraph(mstgraph, vid_new)
+    subgraphs_new[[c2]] = NULL
+    
+    csize_new = csize
+    csize_new[c1] = length(vid_new)
+    csize_new = csize_new[-c2]
+  }
+  
+  # now drop c2
+  return(list(vid_old = vid_old, vid_new = vid_new, clust_old = c2, clust_new = c1,
+              edge_merge = edge_merge, subgraphs = subgraphs_new, csize = csize_new))
+}
+
+# function to update if a merge move is accepted
+updateMerge <- function(res_merge, subgraphs, csize, eid_btw_mst, cluster, edge_status,
+                        adj_list, adj_edge_list, mstgraph) {
+  clust_old = res_merge$clust_old; clust_new = res_merge$clust_new
+  vid_old = V(subgraphs[[clust_old]])$vid
+  vid_new = c(V(subgraphs[[clust_new]])$vid, vid_old)
+  subgraphs[[clust_new]] = induced_subgraph(mstgraph, vid_new)
+  subgraphs[[clust_old]] = NULL
+  
+  csize[clust_new] = length(vid_new)
+  csize = csize[-clust_old]
+  
+  cluster[vid_old] = clust_new
+  idx = which(cluster > clust_old)
+  cluster[idx] = cluster[idx] - 1
+  
+  eid_btw_mst = eid_btw_mst[-res_merge$edge_merge]
+  
+  # update edge status
+  adj_vid_old = unlist(adj_list[vid_old])
+  adj_eid_old = unlist(adj_edge_list[vid_old])
+  clust_adj_old = cluster[adj_vid_old]
+  idx_within = which(clust_adj_old == clust_new)
+  eid_within = adj_eid_old[idx_within]
+  edge_status[eid_within] = 'w'
+  
+  return(list(subgraphs = subgraphs, csize = csize, cluster = cluster,
+              eid_btw_mst = eid_btw_mst, estatus = edge_status))
+}
+
+# function to propose a new MST
+proposeMST <- function(graph0, edge_status, subgraphs) {
+  nedge = length(edge_status)
+  nb = sum(edge_status == 'b')
+  nw = nedge - nb
+  weight = numeric(nedge)
+  weight[edge_status == 'w'] = runif(nw)
+  weight[edge_status == 'b'] = runif(nb, 10, 20)
+  E(graph0)$weight = weight
+  mstgraph = mst(graph0, weights = E(graph0)$weight)
+  
+  # update subgraphs
+  subgraphs_new = lapply(subgraphs, function(g, mstgraph) {induced_subgraph(mstgraph, V(g)$vid)},
+                         mstgraph)
+  # update eid_btw_mst
+  eid_btw_mst = E(mstgraph)$eid[E(mstgraph)$weight >= 10]
+  
+  return(list(mstgraph = mstgraph, subgraphs = subgraphs_new, eid_btw_mst = eid_btw_mst))
+}
+
+# function to get log likelihood ratio
+evalLogLikeRatio <- function(move, e_m, vid_old, vid_new, sigmasq_y, sigmasq_mu) {
+  sigma_ratio = sigmasq_y / sigmasq_mu
+  csize_old = length(vid_old); csize_new = length(vid_new)
+  sum_e_old = sum(e_m[vid_old]); sum_e_new = sum(e_m[vid_new])
+  
+  if(move == 'split') {
+    logdetdiff = -0.5 * (log(csize_old+sigma_ratio) + log(csize_new+sigma_ratio) - 
+                           log(csize_old+csize_new+sigma_ratio) - log(sigma_ratio))
+    quaddiff = 0.5 * (sum_e_old^2/(csize_old+sigma_ratio) + sum_e_new^2/(csize_new+sigma_ratio) - 
+                        (sum_e_old+sum_e_new)^2/(csize_old+csize_new+sigma_ratio)) / sigmasq_y
+  }
+  
+  if(move == 'merge') {
+    logdetdiff = -0.5 * (log(csize_new+sigma_ratio) - log(csize_old+sigma_ratio) - 
+                           log(csize_new-csize_old+sigma_ratio) + log(sigma_ratio))
+    quaddiff = 0.5 * (sum_e_new^2/(csize_new+sigma_ratio) - sum_e_old^2/(csize_old+sigma_ratio) - 
+                        (sum_e_new-sum_e_old)^2/(csize_new-csize_old+sigma_ratio)) / sigmasq_y
+  }
+  return(logdetdiff + quaddiff)
+}
+
+# function to get log posterior density (up to a constant)
+evalLogPost <- function(mu, mu_all, sigmasq_y, k, Y, hyper) {
+  n = length(Y); M = length(k)
+  sigmasq_mu = hyper[1]; lambda_s = hyper[2]; nu = hyper[3]; lambda_k = hyper[4]
+  log_prior =  -(nu/2+1)*log(sigmasq_y) - nu*lambda_s/(2*sigmasq_y)
+  log_prior = log_prior + sum(-lchoose(n-1, k-1) + k*log(lambda_k) - lfactorial(k))
+  log_prior = log_prior - sum(unlist(mu)^2) / (2*sigmasq_mu)
+  
+  Y_hat = rowSums(mu_all)
+  log_like = -n/2*log(sigmasq_y) - sum((Y - Y_hat)^2) / (2*sigmasq_y)
+  return(log_like + log_prior)
+}
+
+# function to standardize Y
+standardize <- function(x) {
+  xmean = mean(x)
+  x = x - xmean
+  xscale = 2 * max(abs(x))
+  x = x / xscale
+  param = c('mean' = xmean, 'scale' = xscale)
+  return(list(x = x, std_par = param))
+}
+
+# function to unstandardize Y
+unstandardize <- function(x, std_par, nomean = F, s2 = F) {
+  if(s2) {
+    x = x * std_par['scale'] ^ 2
+  } else {
+    x = x * std_par['scale']
+  }
+  if(!nomean) x = x + std_par['mean']
+  return(x)
+}
+fitBAST <- function(Y, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 1234) {
+  set.seed(seed)
+  
+  n = vcount(graph0)
+  # hyper-parameter
+  M = hyperpar['M']  # number of trees
+  sigmasq_mu = hyperpar['sigmasq_mu']
+  lambda_s = hyperpar['lambda_s']
+  nu = hyperpar['nu']
+  lambda_k = hyperpar['lambda_k']
+  k_max = hyperpar['k_max']
+  hyper = c(sigmasq_mu, lambda_s, nu, lambda_k)
+  
+  if('name' %in% names(vertex_attr(graph0))) {
+    graph0 = delete_vertex_attr(graph0, 'name')
+  }
+  inc_mat = get.edgelist(graph0, names = F)
+  adj_list = lapply(as_adj_list(graph0), FUN = function(x) {x$vid})
+  adj_edge_list = lapply(as_adj_edge_list(graph0), FUN = function(x) {x$eid})
+  
+  
+  # initial values
+  mstgraph_lst = init_val[['trees']]
+  mu = init_val[['mu']]
+  cluster = init_val[['cluster']]  # n*M matrix
+  sigmasq_y = init_val[['sigmasq_y']]
+  k = as.numeric(apply(cluster, 2, max))  # number of clusters
+  
+  csize = list() # cluster size
+  subgraphs = list()
+  eid_btw_mst = list()
+  g = matrix(0, nrow = n, ncol = M)  # n*M matrix of fitted mu's
+  for(m in 1:M) {
+    cluster_m = cluster[, m]
+    g[, m] = mu[[m]][cluster_m]
+    
+    csize[[m]] = Rfast::Table(cluster_m)
+    
+    mstgraph_m = mstgraph_lst[[m]]
+    clust_vid_m = split(1:n, cluster_m)
+    subgraphs[[m]] = lapply(clust_vid_m, function(vids, mstgraph) {
+      induced_subgraph(mstgraph, vids)
+    }, mstgraph_m)
+    
+    inc_mat_mst = get.edgelist(mstgraph_m, names = F)
+    # idx for bewteen edges
+    c1_m = cluster_m[inc_mat_mst[, 1]]; c2_m = cluster_m[inc_mat_mst[, 2]]
+    idx_btw = which(c1_m != c2_m)
+    eid_btw_mst[[m]] = (E(mstgraph_m)$eid)[idx_btw]
+  }
+  
+  # whether an edge in graph0 is within a cluster or bewteen two clusters
+  # n*M matrix
+  edge_status = apply(cluster, 2, FUN = getEdgeStatus, inc_mat)
+  
+  ################# MCMC ####################
+  
+  ## MCMC results
+  mu_out = list()
+  sigmasq_y_out = numeric((MCMC-BURNIN)/THIN)
+  cluster_out = array(0, dim = c((MCMC-BURNIN)/THIN, n, M))
+  tree_out = list()
+  log_post_out = numeric((MCMC-BURNIN)/THIN)
+  
+  ## MCMC iteration
+  for(iter in 1:MCMC) {
+    for(m in 1:M) {
+      k_m = k[m]
+      mstgraph_m = mstgraph_lst[[m]]
+      edge_status_m = edge_status[, m]
+      cluster_m = cluster[, m]
+      csize_m = csize[[m]]
+      subgraphs_m = subgraphs[[m]]
+      eid_btw_mst_m = eid_btw_mst[[m]]
+      
+      e_m = Y - Rfast::rowsums(g[, -m])
+      
+      if(k_m == 1) {rb = 0.9; rd = 0; rc = 0; rhy = 0.1
+      } else if(k_m == min(k_max, n)) {rb = 0; rd = 0.6; rc = 0.3; rhy = 0.1
+      } else {rb = 0.3; rd = 0.3; rc = 0.3; rhy = 0.1}
+      move = sample(4, 1, prob = c(rb, rd, rc, rhy))
+      
+      if(move == 1) { ## Birth move
+        # split an existing cluster
+        split_res = splitCluster(mstgraph_m, k_m, subgraphs_m, csize_m)
+        vid_new = split_res$vid_new; vid_old = split_res$vid_old
+        
+        # compute log-prior ratio
+        log_A = log(lambda_k) - log(k_m + 1)
+        # compute log-proposal ratio
+        if(k_m == min(k_max, n)-1) {
+          rd_new = 0.6
+        } else {rd_new = 0.3}
+        log_P = log(rd_new) - log(rb)
+        # compute log-likelihood ratio
+        log_L = evalLogLikeRatio('split', e_m, vid_old, vid_new, sigmasq_y, sigmasq_mu)
+        
+        #acceptance probability
+        acc_prob = min(0, log_A + log_P + log_L)
+        acc_prob = exp(acc_prob)
+        if(runif(1) < acc_prob){
+          # accept
+          update_res = updateSplit(split_res, subgraphs_m, k_m, csize_m, eid_btw_mst_m, 
+                                   cluster_m, edge_status_m, adj_list, adj_edge_list)
+          subgraphs[[m]] = update_res$subgraphs
+          csize[[m]] = update_res$csize
+          eid_btw_mst[[m]] = update_res$eid_btw_mst
+          cluster[, m] = update_res$cluster
+          k[m] = k[m] + 1
+          edge_status[, m] = update_res$estatus
+        }
+      }
+      
+      if(move == 2) { ## Death move
+        # merge two existing clusters (c1, c2) -> c2
+        merge_res = mergeCluster(mstgraph_m, eid_btw_mst_m, subgraphs_m, csize_m, 
+                                 cluster_m, inc_mat)
+        vid_old = merge_res$vid_old; vid_new = merge_res$vid_new
+        
+        # compute log-prior ratio
+        log_A = -log(lambda_k) + log(k_m)
+        # # compute log-proposal ratio
+        if(k_m == 2) {rb_new = 0.9
+        }else {rb_new = 0.3}
+        log_P = -(log(rd) - log(rb_new))
+        # compute log-likelihood ratio
+        log_L = evalLogLikeRatio('merge', e_m, vid_old, vid_new, sigmasq_y, sigmasq_mu)
+        
+        # acceptance probability
+        acc_prob = min(0, log_A + log_P + log_L)
+        acc_prob = exp(acc_prob)
+        if(runif(1) < acc_prob){
+          # accept
+          update_res = updateMerge(merge_res, subgraphs_m, csize_m, eid_btw_mst_m, 
+                                   cluster_m, edge_status_m, adj_list, adj_edge_list, mstgraph_m)
+          subgraphs[[m]] = update_res$subgraphs
+          csize[[m]] = update_res$csize
+          eid_btw_mst[[m]] = update_res$eid_btw_mst
+          cluster[, m] = update_res$cluster
+          k[m] = k[m] - 1
+          edge_status[, m] = update_res$estatus
+        }
+      }
+      
+      if(move == 3) { ## change move
+        # first perform death move: (c1, c2) -> c2
+        merge_res = mergeCluster(mstgraph_m, eid_btw_mst_m, subgraphs_m, csize_m, 
+                                 cluster_m, inc_mat, change = T)
+        # then perform birth move
+        split_res = splitCluster(mstgraph_m, k_m-1, merge_res$subgraphs, merge_res$csize)
+        
+        # compute log-likelihood ratio
+        log_L = evalLogLikeRatio('merge', e_m, merge_res$vid_old, merge_res$vid_new, sigmasq_y, sigmasq_mu) + 
+          evalLogLikeRatio('split', e_m, split_res$vid_old, split_res$vid_new, sigmasq_y, sigmasq_mu)
+        
+        # acceptance probability
+        acc_prob = min(0, log_L)
+        acc_prob = exp(acc_prob)
+        if(runif(1) < acc_prob){
+          # accept
+          update_res = updateMerge(merge_res, subgraphs_m, csize_m, eid_btw_mst_m, 
+                                   cluster_m, edge_status_m, adj_list, adj_edge_list, mstgraph_m)
+          update_res = updateSplit(split_res, update_res$subgraphs, k_m-1, update_res$csize, 
+                                   update_res$eid_btw_mst, update_res$cluster, 
+                                   update_res$estatus, adj_list, adj_edge_list)
+          
+          subgraphs[[m]] = update_res$subgraphs
+          csize[[m]] = update_res$csize
+          eid_btw_mst[[m]] = update_res$eid_btw_mst
+          cluster[, m] = update_res$cluster
+          edge_status[, m] = update_res$estatus
+        }
+      }
+      
+      if(move == 4) {
+        # update MST
+        mstgraph_m = proposeMST(graph0, edge_status[, m], subgraphs_m)
+        mstgraph_lst[[m]] = mstgraph_m$mstgraph
+        
+        # update eid_btw_mst
+        eid_btw_mst[[m]] = mstgraph_m$eid_btw_mst
+        # update subgraphs
+        subgraphs[[m]] = mstgraph_m$subgraphs
+      }
+      
+      # update mu_m
+      k_m = k[m]; cluster_m = cluster[, m]; csize_m = csize[[m]]
+      Qinv_diag = 1 / (csize_m/sigmasq_y + 1/sigmasq_mu)
+      b = Qinv_diag * Rfast::group.sum(e_m, cluster_m) / sigmasq_y
+      mu[[m]] = rnorm(k_m, b, sqrt(Qinv_diag))
+      
+      g[, m] = mu[[m]][cluster_m]
+    }
+    
+    # update sigmasq_y
+    Y_hat = g[, M] + Y - e_m
+    rate = 0.5*(nu*lambda_s + sum((Y - Y_hat)^2))
+    sigmasq_y = 1/rgamma(1, shape = (n+nu)/2, rate = rate)
+    
+    
+    ## save result
+    if(iter > BURNIN & (iter - BURNIN) %% THIN == 0) {
+      mu_out[[(iter-BURNIN)/THIN]] = mu
+      sigmasq_y_out[(iter-BURNIN)/THIN] = sigmasq_y
+      #tree_out[[(iter-BURNIN)/THIN]] = mstgraph_lst
+      cluster_out[(iter-BURNIN)/THIN, , ] = cluster
+      
+      log_post_out[(iter-BURNIN)/THIN] = evalLogPost(mu, g, sigmasq_y, k, Y, hyper)
+    }
+    
+    #if(iter %% 100 == 0)
+    #  cat('Iteration', iter, 'done\n')
+  }
+  
+  mode(cluster_out) = 'integer'  # to save memory
+  return(list('mu_out' = mu_out,
+              'sigmasq_y_out' = sigmasq_y_out,
+              'cluster_out' = cluster_out, 'log_post_out' = log_post_out))
+}
+### Functions for 2-d constrained domains -----
+
+# function to create a 2d mesh
+gen2dMesh <- function(coords, bnd, ...) {
+  # note the first and last boundary nodes are the same
+  n = nrow(coords); n_bnd = length(bnd$x) - 1
+  coords_all = rbind(coords, cbind(bnd$x, bnd$y)[1:n_bnd, ])
+  
+  # get boundary segments
+  segments = cbind( (n+1):(n+n_bnd), c((n+2):(n+n_bnd), n+1) )
+  
+  mesh = create.mesh.2D(coords_all, segments = segments, ...)
+  mesh$n_int = n  # number of interior nodes
+  # edges that connect boundary nodes
+  mesh$bnd_edges = apply(mesh$edges, 1, FUN = function(x) any(x > n))
+  return(mesh)
+}
+
+# function to obtain a constrained Delaunay triangulation graph from a mesh
+constrainedDentri <- function(n, mesh, threshold = 1000) {
+  coords = mesh$nodes[1:n, ]
+  
+  # drop edges that connect boundary nodes
+  rid_drop = mesh$bnd_edges
+  edge_list = mesh$edges[!rid_drop, ]
+  
+  # compute edge length
+  distance = sqrt( rowSums((coords[edge_list[, 1], ] - coords[edge_list[, 2], ]) ^ 2) )
+  
+  rid_drop = distance > threshold
+  edge_list = edge_list[!rid_drop, ]
+  distance = distance[!rid_drop]
+  
+  graph0 = graph_from_edgelist(edge_list, directed = F)
+  E(graph0)$weight = distance
+  return(graph0)
+}
+
+# function to generate equally spaced points along a given line
+refineLine <- function(start, end, n) {
+  grids_x = seq(start[1], end[1], length.out = n)
+  grids_y = seq(start[2], end[2], length.out = n)
+  grids = cbind(grids_x, grids_y)
+  return(grids)
+}
+
+### Constrained KNN -----
+
+# function to get a KNN graph given a distance matrix
+KNNGraph <- function(dist_mat, k_nn = 5, cross_dist = F, return_graph = T) {
+  
+  n1 = nrow(dist_mat); n2 = ncol(dist_mat)
+  if(cross_dist) {
+    # dist_mat is cross distance matrix
+    adj_list = apply(dist_mat, 1, function(x) order(x)[1:k_nn])
+  } else {
+    adj_list = apply(dist_mat, 1, function(x) order(x)[2:(k_nn+1)])
+  }
+  adj_list = t(adj_list)
+  
+  if(return_graph & n1 == n2) {
+    require(igraph)
+    require(Matrix)
+    
+    i_all = c(); j_all = c(); x_all = c()
+    for(i in 1:n1) {
+      for(cidx in 1:k_nn) {
+        i_all = c(i_all, i)
+        j_all = c(j_all, adj_list[i, cidx])
+        x_all = c(x_all, dist_mat[i, adj_list[i, cidx] ])
+      }
+    }
+    adj_mat = sparseMatrix(i = i_all, j = j_all, x = x_all, dims = c(n1, n2))
+    # get knn graph
+    knngraph = graph_from_adjacency_matrix(adj_mat, mode = 'directed', weighted = T)
+    knngraph = as.undirected(knngraph, mode = 'collapse', edge.attr.comb = 'first')
+    return(knngraph)
+  } else {
+    return(lapply(1:n1, function(i) adj_list[i, ]))
+  }
+}
+
+
+### Plotting functions -----
+
+# function to plot complex domain
+geom_boundary <- function(bnd, ...) {
+  n = length(bnd$x)
+  segments = cbind(bnd$x[-n], bnd$y[-n], bnd$x[-1], bnd$y[-1])
+  segments = data.frame(segments)
+  names(segments) = c('x1', 'y1', 'x2', 'y2')
+  return(geom_segment(aes(x = x1, y = y1, xend = x2, yend = y2), data = segments, ...))
+}
+
+# plotting functions from SCC
+plotGraph <- function(coords, graph, title = NULL){
+  require(ggplot2)
+  edgelist = get.edgelist(graph) 
+  edgedata = data.frame(coords[edgelist[,1 ], ], coords[edgelist[, 2], ])
+  colnames(edgedata) = c("X1", "Y1", "X2", "Y2")
+  
+  ggplot() + geom_segment(aes(x=X1, y=Y1, xend = X2, yend = Y2), data = edgedata, size = 0.5, colour = "grey") +
+    labs(title = title, x = "lon", y = "lat")+
+    theme(plot.title = element_text(hjust = 0.5))
+}
+
+# function to plot spatial field
+plotField <- function(coords, Data, col_lim = NULL, legend_name = NULL, title = NULL, colors = rainbow(10)){
+  if(missing(col_lim)) {col_lim = range(Data)}
+  ggplot() + 
+    geom_tile(data = data.frame(coords), aes(lon, lat, fill = Data)) +
+    scale_fill_gradientn(colours = colors, limits = col_lim, name = legend_name, na.value = 'white') +
+    ggtitle(title) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          panel.background = element_blank(), axis.line = element_line(colour = "black"),
+          # legend.title=element_blank(), 
+          plot.title = element_text(hjust = 0.5, size = 10),
+          legend.text = element_text(size = 9, hjust = 0, margin = margin(l = 3)))
+}
+```
+
+```{r prediction-funcs, include=FALSE}
+predictBAST <- function(mcmc_res, coords, coords_new, method = 'soft-knn', 
+                        mesh = NULL, return_type = 'mean', weighting = 'uniform', 
+                        cdist_mat = NULL, k_nn = 5, seed = 12345) {
+  set.seed(seed)
+  
+  # get posterior mean in-sample prediction
+  npost = length(mcmc_res$log_post_out)
+  cluster_out = mcmc_res$cluster_out
+  mu_out = mcmc_res$mu_out
+  
+  M = dim(cluster_out)[3]
+  n = dim(cluster_out)[2]
+  
+  mu_all = array(0, dim = c(npost, n, M))
+  for(i in 1:npost) {
+    cluster_i = cluster_out[i, , , drop = F]
+    mu_i = mu_out[[i]]
+    mu_all_i = matrix(0, ncol = M, nrow = n) # n*M matrix
+    for(m in 1:M) {
+      mu_all_i[, m] = mu_i[[m]][cluster_i[1, , m]]
+    }
+    mu_all[i, , ] = mu_all_i
+  }
+  Y_hat_all = t(apply(mu_all, c(1, 2), sum))
+  
+  if(method == 'soft-mesh' | method == 'soft-knn') {
+    ## soft prediction
+    ## method == 'soft-mesh': soft prediction using FEM mesh (for 2-d domains only)
+    ## method == 'soft-knn': soft prediction based on KNN graph
+    
+    Y_new_hat = softPredict2(mu_all, coords, coords_new, method, mesh,
+                             return_type, weighting, cdist_mat, k_nn)
+  } else {
+    stop('Unsupported method')
+  }
+  
+  return(Y_new_hat)
+}
+
+# function to get adjacency list for boundary mesh nodes
+getBndAdjList <- function(mesh) {
+  n_int = mesh$n_int  # number of interior nodes
+  n_bnd = nrow(mesh$nodes) - n_int  # number of boundary nodes
+  edge_list = mesh$edges[mesh$bnd_edges, ]
+  
+  adj_list = rep(list(c()), n_bnd)  # empty list
+  names(adj_list) = as.character((n_int + 1):(n_int + n_bnd))
+  for(i in 1:nrow(edge_list)) {
+    endpoints = edge_list[i, ]
+    v_bnd = max(endpoints); v_int = min(endpoints)
+    if(v_int > n_int) next
+    v_bnd_char = as.character(v_bnd)
+    if(is.null(adj_list[[v_bnd_char]])) {
+      adj_list[[v_bnd_char]] = c(v_int)
+    } else {
+      adj_list[[v_bnd_char]] = c(adj_list[[v_bnd_char]], v_int)
+    }
+  }
+  return(adj_list)
+}
+
+# function to get neighbor probability matrix for new locations given a mesh
+# nn_prob[i, j]: probability that node j is used for prediction at new location i
+# ncol(nn_prob) == number of nodes in mesh (including boundary nodes)
+getNNProb <- function(mesh, coords_new, type = 'uniform', b = 1) {
+  if(type == 'uniform' | type == 'distance') {
+    tri_idx = apply(coords_new, 1, function(loc) R_insideIndex2(mesh, loc, all_tri = T))
+    nn_prob = matrix(0, nrow = nrow(coords_new), ncol = nrow(mesh$nodes))
+    
+    n_nodes = nrow(mesh$nodes); n_int = mesh$n_int
+    if(type == 'distance') {
+      weights = 1 / as.matrix(rdist(coords_new, mesh$nodes)) ^ b
+    } else {
+      weights = matrix(1, nrow = nrow(coords_new), ncol = nrow(mesh$nodes))
+    }
+    
+    if(class(tri_idx) == 'list') {
+      for(i in 1:nrow(coords_new)) {
+        nn_idx = mesh$triangles[tri_idx[[i]], ]
+        nn_idx = unique(c(nn_idx))
+        # use boundary nodes only if all neighbors are on boundary
+        if(!all(nn_idx > n_int))
+          nn_idx = nn_idx[nn_idx <= n_int]
+        nn_prob[i, nn_idx] = weights[i, nn_idx]
+      }
+      
+    } else { # tri_idx is a vector
+      for(i in 1:nrow(coords_new)) {
+        nn_idx = mesh$triangles[tri_idx[i], ]
+        # use boundary nodes only if all neighbors are on boundary
+        if(!all(nn_idx > n_int))
+          nn_idx = nn_idx[nn_idx <= n_int]
+        nn_prob[i, nn_idx] = weights[i, nn_idx]
+      }
+    }
+    
+    # normalize nn_prob
+    nn_prob = nn_prob / rowSums(nn_prob)
+    
+  }  else {
+    stop('Unsupported weighting types')
+  }
+  
+  return(nn_prob)
+}
+
+# extend prediction to boundary nodes of a mesh
+getBndPred <- function(Y_hat, mesh, adj_list_bnd = NULL) {
+  if(is.null(adj_list_bnd))
+    adj_list_bnd = getBndAdjList(mesh)
+  n = length(Y_hat)  # number of interior nodes
+  n_bnd = length(adj_list_bnd)  # number of boundary nodes
+  Y_hat_bnd = rep(0, n_bnd)
+  for(i in (n + 1):(n + n_bnd))
+    Y_hat_bnd[i - n] = mean(Y_hat[ adj_list_bnd[[as.character(i)]] ])
+  return(Y_hat_bnd)
+}
+
+
+# helper function for soft prediction
+softPredict2 <- function(mu_all, coords, coords_new, method = 'soft-knn', 
+                         mesh = NULL, return_type = 'mean', 
+                         weighting = 'uniform', cdist_mat = NULL, k_nn = 5) {
+  extend_bnd = F  # do we have to extend prediction to boundary nodes in mesh
+  if(method == 'soft-mesh') {
+    # soft prediction using mesh
+    # require(fdaPDE)
+    if(is.null(mesh)) 
+      stop("Missing 'mesh'.")
+    
+    # get neighbor choices for new locations
+    nn_prob = getNNProb(mesh, coords_new, weighting)
+    nn_prob = round(nn_prob, 8)
+    
+    # check if boundary nodes are useful for prediction
+    n_int = mesh$n_int
+    if(any(nn_prob[, (n_int+1):ncol(nn_prob)] > 0))
+      extend_bnd = T
+    
+    # pre-compute adjacency list for boundary mesh nodes
+    if(extend_bnd)
+      adj_list_bnd = getBndAdjList(mesh)
+    
+  } else if(method == 'soft-knn') {
+    # soft prediction using constrained KNN
+    require(fields)
+    
+    if(is.null(cdist_mat))
+      cdist_mat = as.matrix(rdist(coords_new, coords))
+    nn_list = KNNGraph(cdist_mat, k_nn, cross_dist = T, return_graph = F)
+
+    # get probability for each neighbor
+    n_new = nrow(coords_new)
+    nn_prob = matrix(0, nrow = n_new, ncol = nrow(coords))
+    if(weighting == 'uniform') {
+      for(i in 1:n_new)
+        nn_prob[i, nn_list[[i]] ] = 1
+    } else if(weighting == 'distance') {
+      # deal with zero distance
+      cdist_mat[cdist_mat == 0] = 1e-9
+      for(i in 1:n_new)
+        nn_prob[i, nn_list[[i]] ] = 1 / cdist_mat[i, nn_list[[i]] ]
+    } else {
+      stop('Unsupported weighting types')
+    }
+    # normalize nn_prob
+    nn_prob = nn_prob / rowSums(nn_prob)
+  }
+  
+  n_nodes = ncol(nn_prob)
+  npost = dim(mu_all)[1]
+  M = dim(mu_all)[3]
+  Y_new_all = matrix(0, nrow = nrow(coords_new), ncol = npost)
+  
+  
+  for(i in 1:npost) {
+    # sample neighbors
+    nn = t(apply(nn_prob, 1, function(p) sample.int(n_nodes, M, replace = T, prob = p)))
+    
+    mu_i = mu_all[i, , ]
+    
+    if(method == 'soft-mesh' & extend_bnd) {
+      # extend mu to boundary nodes in FEM mesh
+      mu_i_bnd = apply(mu_i, 2, getBndPred, mesh = mesh, adj_list_bnd = adj_list_bnd)
+      mu_i = rbind(mu_i, mu_i_bnd)
+    }
+    
+    mu_new_i = matrix(0, nrow = nrow(coords_new), ncol = M)
+    for(m in 1:M)
+      mu_new_i[, m] = mu_i[nn[, m], m]
+    Y_new_all[, i] = rowSums(mu_new_i)
+  }
+  if(return_type == 'mean') {
+    Y_new_hat = rowMeans(Y_new_all)
+  } else {
+    Y_new_hat = Y_new_all
+  }
+  return(Y_new_hat)
+}
+```
+
+First, we'll read in the processed data (information on this can be found in the AralSea.R file at the GitHub repository above)
+
+```{r get-aral-data}
+aralDataUrl = "https://github.com/ztluostat/BAST/raw/main/aral_data.RData"
+load(url(aralDataUrl))
+n = length(Y)
+```
+
+Here is a plot of what the data looks like:
+
+```{r aral-plot, fig.width = 6, fig.height = 6}
+ggplot() + 
+  geom_boundary(bnd) +
+  geom_point(aes(x = lon, y = lat, col = Y), data = as.data.frame(coords)) +
+  scale_color_gradientn(colours = rainbow(5), name = 'Y') +
+  labs(x = 'Scaled Lon.', y = 'Scaled Lat.') + 
+  ggtitle('Observed Data')
+```
+
+The BASTION package does not include a function for constructing a constrained Delauney triangulation graph, so the graph will be constructed using the `constrainedDentri` function from the paper repository and used for all implementations.
+
+```{r make-aral-graph, fig.width = 6, fig.height = 6}
+aral_graph = constrainedDentri(n, gen2dMesh(coords, bnd)) # Get full graph
+E(aral_graph)$eid = c(1:ecount(aral_graph)) # Assign edge ids
+V(aral_graph)$vid = c(1:vcount(aral_graph)) # Assign vertex ids
+# plot spatial graph
+plotGraph(coords, aral_graph) + 
+  geom_boundary(bnd) +
+  labs(x = 'Scaled Lon.', y = 'Scaled Lat.') + 
+  ggtitle('Spatial Graph')
+```
+
+The following is the implementation from the original paper. In the interest of timing, the iteration numbers have been cut down and such changes are commented below.
+
+```{r ztluo-implement}
+mstgraph = mst(aral_graph)  # initial spanning tree
+graph0 = delete_edge_attr(aral_graph, 'weight')
+mstgraph0 = delete_edge_attr(mstgraph, 'weight')
+
+M = 30      # number of weak learners
+k_max = 5   # maximum number of clusters per weak learner
+mu = list() # initial values of mu
+mstgraph_lst = list()  # initial spanning trees
+cluster = matrix(1, nrow = n, ncol = M)  # initial cluster memberships
+for(m in 1:M) {
+  mu[[m]] = c(0)
+  mstgraph_lst[[m]] = mstgraph0
+}
+
+init_val = list()
+init_val[['trees']] = mstgraph_lst
+init_val[['mu']] = mu
+init_val[['cluster']] = cluster
+init_val[['sigmasq_y']] = 1
+
+# standardize Y
+std_res = standardize(Y)
+Y_std = std_res$x
+std_par = std_res$std_par
+
+# find lambda_s
+nu = 3; q = 0.9
+quant = qchisq(1-q, nu)
+lambda_s = quant * var(Y_std) / nu
+
+hyperpar = c()
+hyperpar['sigmasq_mu'] = (0.5/(2*sqrt(M)))^2
+hyperpar['lambda_s'] = lambda_s
+hyperpar['nu'] = nu
+hyperpar['lambda_k'] = 4
+hyperpar['M'] = M
+hyperpar['k_max'] = k_max
+
+# MCMC parameters
+# number of posterior samples = (MCMC - BURNIN) / THIN
+MCMC = 10000    # MCMC iterations !! Down from 30000 originally !!
+BURNIN = 5000  # burnin period length !! Down from 15000 originally !!
+THIN = 5        # thinning intervals
+
+```
+
+Here is an implementation written using the BASTION package (based on the one from the paper)
+
+```{r BASTION-implement}
+BASTIONfit = function(Y, graph, init_vals, hyperpars, MCMC, BURNIN, THIN, seed = NULL) {
+  if(!is.null(seed)) {
+    set.seed(seed)
+  }
+    n = vcount(graph)
+  # hyper-parameter
+  M = hyperpars['M']  # number of trees
+  sigmasq_mu = hyperpars['sigmasq_mu']
+  lambda_s = hyperpars['lambda_s']
+  nu = hyperpars['nu']
+  lambda_k = hyperpars['lambda_k']
+  k_max = hyperpars['k_max']
+  hyper = c(sigmasq_mu, lambda_s, nu, lambda_k)
+  
+  # initial values
+  mstgraph_lst = init_vals[['trees']]
+  mu = init_vals[['mu']]
+  cluster = init_vals[['cluster']]  # n*M matrix
+  sigmasq_y = init_vals[['sigmasq_y']]
+  k = as.numeric(apply(cluster, 2, max))  # number of clusters
+  csize = list() # cluster size
+  g = matrix(0, nrow = n, ncol = M)  # n*M matrix of fitted mu's
+  for(m in 1:M) {
+    cluster_m = cluster[, m]
+    g[, m] = mu[[m]][cluster_m]
+    csize[[m]] = Rfast::Table(cluster_m)
+    mstgraph_m = mstgraph_lst[[m]]
+  }
+  
+  # whether an edge in graph is within a cluster or between two clusters
+  # n*M matrix
+  
+  ################# MCMC ####################
+  
+  ## MCMC results
+  mu_out = list()
+  sigmasq_y_out = numeric((MCMC-BURNIN)/THIN)
+  cluster_out = array(0, dim = c((MCMC-BURNIN)/THIN, n, M))
+  tree_out = list()
+  log_post_out = numeric((MCMC-BURNIN)/THIN)
+  
+  ## MCMC iteration
+  for(iter in 1:MCMC) {
+    for(m in 1:M) {
+      k_m = k[m]
+      mstgraph_m = mstgraph_lst[[m]]
+      cluster_m = cluster[, m]
+      csize_m = csize[[m]]
+      
+      e_m = Y - Rfast::rowsums(g[, -m])
+      
+      if(k_m == 1) {
+        rb = 0.9; 
+        rd = 0; 
+        rc = 0; 
+        rhy = 0.1
+      } else if(k_m == min(k_max, n)) {
+        rb = 0;
+        rd = 0.6;
+        rc = 0.3;
+        rhy = 0.1
+      } else {
+        rb = 0.3;
+        rd = 0.3;
+        rc = 0.3;
+        rhy = 0.1
+      }
+      move = sample(4, 1, prob = c(rb, rd, rc, rhy))
+      # current_comp = components(mstgraph_m)
+      
+      if(move == 1) { ## Birth move
+        # split an existing cluster
+        clust_split = sample.int(k_m, 1, prob = (csize_m - 1))
+        proposed_output = graphBirth(mstgraph_m, cluster_m, clust_split)
+        vid_new = proposed_output$new_clust_ids
+        vid_old = proposed_output$old_clust_ids
+        
+        # compute log-prior ratio
+        log_A = log(lambda_k) - log(k_m + 1)
+        # compute log-proposal ratio
+        if(k_m == min(k_max, n)-1) {
+          rd_new = 0.6
+        } else {
+          rd_new = 0.3
+        }
+        log_P = log(rd_new) - log(rb)
+        # compute log-likelihood ratio
+        ##
+        sigma_ratio = sigmasq_y / sigmasq_mu
+        csize_old = length(vid_old)
+        csize_new = length(vid_new)
+        sum_e_old = sum(e_m[vid_old])
+        sum_e_new = sum(e_m[vid_new])
+        logdetdiff = -0.5 * (log(csize_old + sigma_ratio) + 
+                             log(csize_new + sigma_ratio) - 
+                             log(csize_old + csize_new + sigma_ratio) - 
+                             log(sigma_ratio))
+        quaddiff = 0.5 * ( sum_e_old^2 / (csize_old + sigma_ratio) + 
+                           sum_e_new^2 / (csize_new + sigma_ratio) -
+                           (sum_e_old + sum_e_new)^2 / (csize_old + csize_new + sigma_ratio)
+                          ) / sigmasq_y
+        ##
+        log_L = logdetdiff + quaddiff
+        
+        #acceptance probability
+        acc_prob = min(0, log_A + log_P + log_L)
+        acc_prob = exp(acc_prob)
+        if(runif(1) < acc_prob){
+          # accept
+          mstgraph_lst[[m]] = proposed_output$graph
+          csize[[m]] = components(proposed_output$graph)$csize
+          cluster[, m] = proposed_output$membership
+          k[m] = k[m] + 1
+        }
+      }
+      
+      if(move == 2) { ## Death move
+        # merge two existing clusters (c1, c2) -> c2
+        proposed_output = graphDeath(mstgraph_m, cluster_m, graph)
+        vid_old = proposed_output$old_clust_ids
+        vid_new = proposed_output$new_clust_ids
+        
+        # compute log-prior ratio
+        log_A = -log(lambda_k) + log(k_m)
+        # # compute log-proposal ratio
+        if(k_m == 2) {
+          rb_new = 0.9
+        }else {
+          rb_new = 0.3
+        }
+        log_P = -(log(rd) - log(rb_new))
+        # compute log-likelihood ratio
+        sigma_ratio = sigmasq_y / sigmasq_mu
+        csize_old = length(vid_old)
+        csize_new = length(vid_new)
+        sum_e_old = sum(e_m[vid_old])
+        sum_e_new = sum(e_m[vid_new])
+        logdetdiff = -0.5 * (log(csize_new+sigma_ratio) - 
+                             log(csize_old+sigma_ratio) - 
+                             log(csize_new-csize_old+sigma_ratio) + 
+                             log(sigma_ratio))
+        quaddiff = 0.5 * (  sum_e_new^2/(csize_new+sigma_ratio) - 
+                            sum_e_old^2/(csize_old+sigma_ratio) - 
+                            (sum_e_new-sum_e_old)^2/
+                              (csize_new-csize_old+sigma_ratio)
+                          ) / sigmasq_y
+        log_L = logdetdiff + quaddiff
+        
+        # acceptance probability
+        acc_prob = min(0, log_A + log_P + log_L)
+        acc_prob = exp(acc_prob)
+        if(runif(1) < acc_prob){
+          # accept
+          mstgraph_lst[[m]] = proposed_output$graph
+          csize[[m]] = components(proposed_output$graph)$csize
+          cluster[, m] = proposed_output$membership
+          k[m] = k[m] - 1
+        }
+      }
+      
+      if(move == 3) { ## change move
+        # # first perform death move: (c1, c2) -> c2
+        # merge_res = mergeCluster(mstgraph_m, eid_btw_mst_m, subgraphs_m, csize_m, 
+        #                          cluster_m, inc_mat, change = T)
+        # # then perform birth move
+        # split_res = splitCluster(mstgraph_m, k_m-1, merge_res$subgraphs, merge_res$csize)
+        
+        proposed_output = graphChange(mstgraph_m, cluster_m, graph)
+        
+        vid_old_d = proposed_output$old_dclust_ids
+        vid_new_d = proposed_output$new_dclust_ids
+        
+        vid_old_b = proposed_output$old_bclust_ids
+        vid_new_b = proposed_output$new_bclust_ids
+        
+        
+        # compute log-likelihood ratio
+        # First do it for the death move
+        sigma_ratio = sigmasq_y / sigmasq_mu
+        csize_old_d = length(vid_old_d)
+        csize_new_d = length(vid_new_d)
+        sum_e_old_d = sum(e_m[vid_old_d])
+        sum_e_new_d = sum(e_m[vid_new_d])
+        logdetdiff_d = -0.5 * (log(csize_new_d+sigma_ratio) - 
+                             log(csize_old_d+sigma_ratio) - 
+                             log(csize_new_d-csize_old_d+sigma_ratio) + 
+                             log(sigma_ratio))
+        quaddiff_d = 0.5 * (  sum_e_new_d^2/(csize_new_d+sigma_ratio) - 
+                            sum_e_old_d^2/(csize_old_d+sigma_ratio) - 
+                            (sum_e_new_d-sum_e_old_d)^2/(csize_new_d-csize_old_d+sigma_ratio)
+                          ) / sigmasq_y
+        log_L_death = logdetdiff_d + quaddiff_d
+        # Now do it for the birth move
+        csize_old_b = length(vid_old_b)
+        csize_new_b = length(vid_new_b)
+        sum_e_old_b = sum(e_m[vid_old_b])
+        sum_e_new_b = sum(e_m[vid_new_b])
+        logdetdiff_b = -0.5 * (log(csize_old_b + sigma_ratio) + 
+                             log(csize_new_b + sigma_ratio) - 
+                             log(csize_old_b + csize_new_b + sigma_ratio) - 
+                             log(sigma_ratio))
+        quaddiff_b = 0.5 * ( sum_e_old_b^2 / (csize_old_b + sigma_ratio) + 
+                           sum_e_new_b^2 / (csize_new_b + sigma_ratio) -
+                           (sum_e_old_b + sum_e_new_b)^2 / (csize_old_b + csize_new_b + sigma_ratio)
+                          ) / sigmasq_y
+        log_L_birth = logdetdiff_b + quaddiff_b
+        # Add them together
+        log_L = log_L_birth + log_L_death
+        
+        # acceptance probability
+        acc_prob = min(0, log_L)
+        acc_prob = exp(acc_prob)
+        if(runif(1) < acc_prob){
+          # accept
+          mstgraph_lst[[m]] = proposed_output$graph
+          csize[[m]] = components(proposed_output$graph)$csize
+          cluster[, m] = proposed_output$membership
+        }
+      }
+      
+      if(move == 4) {
+        # update MST
+        proposed_output = graphHyper(graph, cluster_m)
+        mstgraph_lst[[m]] = proposed_output$graph
+        cluster[, m] = proposed_output$membership
+      }
+      
+      # update mu_m
+      k_m = k[m]
+      cluster_m = cluster[, m]
+      csize_m = csize[[m]]
+      Qinv_diag = 1 / (csize_m/sigmasq_y + 1/sigmasq_mu)
+      b = Qinv_diag * Rfast::group.sum(e_m, cluster_m) / sigmasq_y
+      mu[[m]] = rnorm(k_m, b, sqrt(Qinv_diag))
+      
+      g[, m] = mu[[m]][cluster_m]
+    }
+    
+    # update sigmasq_y
+    Y_hat = g[, M] + Y - e_m
+    rate = 0.5*(nu*lambda_s + sum((Y - Y_hat)^2))
+    sigmasq_y = 1/rgamma(1, shape = (n+nu)/2, rate = rate)
+    
+    
+    ## save result
+    if(iter > BURNIN & (iter - BURNIN) %% THIN == 0) {
+      mu_out[[(iter-BURNIN)/THIN]] = mu
+      sigmasq_y_out[(iter-BURNIN)/THIN] = sigmasq_y
+      #tree_out[[(iter-BURNIN)/THIN]] = mstgraph_lst
+      cluster_out[(iter-BURNIN)/THIN, , ] = cluster
+      
+      log_post_out[(iter-BURNIN)/THIN] = evalLogPost(mu, g, sigmasq_y, k, Y, hyper)
+    }
+    
+    # cat(iter, ', ', sep = "")
+  }
+  
+  mode(cluster_out) = 'integer'  # to save memory
+  return(list('mu_out' = mu_out,
+              'sigmasq_y_out' = sigmasq_y_out,
+              'cluster_out' = cluster_out, 
+              'log_post_out' = log_post_out))
+}
+```
+
+Let's take a look at the speed difference. Note that the code below is by default not run at the time of this vignette's execution as it is extremely slow. It instead loads the results precomputed on a system with an AMD Ryzen 7 3700X processor and 32GB of RAM.
+
+```{r aral-speed-full, eval = FALSE}
+aral_speed_full = microbenchmark(
+  bastfit = fitBAST(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345),
+  bastionfit = BASTIONfit(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345),
+  bastionfit_C = BASTIONfit_C(Y_std, aral_graph, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345),
+  times = 5
+)
+
+save(aral_speed_full, file = "aral_speed_results_full.Rda")
+```
+
+```{r aral-speed-full-xtable, results='asis'}
+datapath = paste0(getwd(), "/aral_speed_results_full.Rda")
+attach(what = datapath, name = "precomputed")
+speed_table2 = xtable(summary(aral_speed_full), caption = "Speed comparison (seconds) between the different native R implementations and C++.")
+detach(precomputed)
+print(speed_table2, type = "html", comment = FALSE)
+```
+
+Unsurprisingly, the speed with an R implementation leaves much to be desired with even the fastest possible fitting time coming in at almost 7 minutes on a relatively small data set. Further, the original code from the paper is more performant at the cost of being more specific to this particular setup. We see a huge improvement from moving to C++ due to the the power of the Boost graph library and generally lower function call overhead compared to R.
+
+As a sanity check, let's see the predictive field generated by the different models to see that they are mostly equivalent. Note that despite setting the same seed, the results will still be slightly different due to having a different sequence of RNG function calls. However, each function individually will return the same results given the same seed, including the one implemented in C++ which uses R's random number generation and not Boost's.
+
+The code block below is not executed at the time of knitting in the interest of vignette compilation speed.
+
+```{r, eval = FALSE}
+bastionfit_C = BASTIONfit_C(Y_std, aral_graph, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345)
+save(bastionfit_C, file = "aral_fit_C.Rda")
+bastfit = fitBAST(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345)
+bastionfit = BASTIONfit(Y_std, graph0, init_val, hyperpar, MCMC, BURNIN, THIN, seed = 12345)
+save(bastfit, bastionfit, file = "aral_fits_no_c.Rda")
+```
+
+Next, we'll form the prediction field (a grid in this case due to the nature of our data).
+
+```{r prediction-Y, include=FALSE}
+load("aral_fit_C.Rda")
+load("aral_fits_no_c.Rda")
+mesh = gen2dMesh(coords, bnd)
+
+
+prediction_scheme = function(fitted_model) {
+  Y_grid_all = predictBAST(fitted_model, 
+                           coords, 
+                           coords_grid, 
+                           method = 'soft-mesh', 
+                           mesh = mesh, 
+                           weighting = 'uniform', 
+                           return_type = 'all', 
+                           seed = 12345)
+  Y_grid_all = apply(Y_grid_all, 2, unstandardize, std_par = std_par)
+
+  # use posterior mean as predictor
+  Y_grid = rowMeans(Y_grid_all)
+  
+  # back to original scale
+  #Y_grid = Y_grid + mean(response)
+  return(Y_grid)
+}
+
+# Predict for each of the 3 different models
+Y_grid_BAST = prediction_scheme(bastfit)
+Y_grid_BASTION = prediction_scheme(bastionfit)
+Y_grid_BASTION_C = prediction_scheme(bastionfit_C)
+```
+
+Finally, we'll plot the predictive field for each model as well as a reminder of what the true data looked like:
+
+```{r plot-prediction-Y, fig.width=10, fig.height=10}
+plot_bast = plotField(coords_grid, Y_grid_BAST, title = 'Predictive Field - BAST') +
+  xlab('Scaled Long.') + ylab('Scaled Lat.')
+
+plot_bastion = plotField(coords_grid, Y_grid_BASTION, title = 'Predictive Field - BASTION (R)') +
+  xlab('Scaled Long.') + ylab('Scaled Lat.')
+
+plot_bastion_c = plotField(coords_grid, Y_grid_BASTION_C, title = 'Predictive Field - BASTION (C++)') +
+  xlab('Scaled Long.') + ylab('Scaled Lat.')
+
+plot_true = ggplot() + 
+  geom_boundary(bnd) +
+  geom_point(aes(x = lon, y = lat, col = Y), data = as.data.frame(coords)) +
+  scale_color_gradientn(colours = rainbow(5), name = 'Y') +
+  labs(x = 'Scaled Lon.', y = 'Scaled Lat.') + 
+  ggtitle('Observed Data')
+
+grid.arrange(plot_true, plot_bast, plot_bastion, plot_bastion_c)
+```
+
+As we can see, the predictive fields for the different implementations are virtually identical.

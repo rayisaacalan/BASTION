@@ -259,6 +259,8 @@ constructClusters = function(graph, nclust, minclust = NULL) {
 #' @return A list containing two elements:
 #' \item{graph}{The input graph with 1 fewer active edge}
 #' \item{membership}{A vector of integers of length N with k + 1 unique integers which map each vertex to a cluster}
+#' \item{new_clust_ids}{Vertex keys of the vertices belonging to the new cluster}
+#' \item{old_clust_ids}{Vertex keys of the vertices from the cluster which was split excluding the ones from \code{new_clust_ids}}
 #' @export
 #'
 #' @seealso
@@ -302,7 +304,11 @@ graphBirth = function(graph, membership, clust = NULL) {
   if(is.null(clust)) {
     # Exclude clusters which only have one vertex
     valid_clusts = (1:k)[which(igraph::components(graph)$csize > 1)]
-    clust = sample(valid_clusts, 1)
+    if(length(valid_clusts) == 1) {
+      clust = valid_clusts
+    } else {
+      clust = sample(valid_clusts, 1)
+    }
   }
   # Test that clust is valid
   if(clust > k || clust < 1) {
@@ -327,8 +333,12 @@ graphBirth = function(graph, membership, clust = NULL) {
   cut_graph = igraph::delete.edges(graph, cut_edge)
   # Update the membership of each cluster
   cut_membership = igraph::components(cut_graph)$membership
+  # Get the vertex (keys) which belong to the 'new' and 'old' clust from membership
+  # We'll define the 'new' clust as being the one with a greater cluster index
+  new_clust_ids = which(cut_membership == max(cut_membership[clust_ids]))
+  old_clust_ids = which(cut_membership == min(cut_membership[clust_ids]))
   # Return the updated graph and new membership
-  return(list(graph = cut_graph, membership = cut_membership))
+  return(list(graph = cut_graph, membership = cut_membership, new_clust_ids = new_clust_ids, old_clust_ids = old_clust_ids))
 }
 
 #' Perform a cluster death operation (merge an existing cluster)
@@ -347,6 +357,8 @@ graphBirth = function(graph, membership, clust = NULL) {
 #' @return A list containing two elements:
 #' \item{graph}{The input graph with 1 additional active edge}
 #' \item{membership}{A vector of integers of length N with k - 1 unique integers which map each vertex to a cluster}
+#' \item{new_clust_ids}{Vertex keys of the vertices belonging to the newly unified cluster}
+#' \item{old_clust_ids}{Vertex keys of the vertices belonging only to the cluster being merged which has a higher number}
 #' @export
 #'
 #' @seealso
@@ -396,12 +408,18 @@ graphDeath = function(graph, membership, full_graph) {
   between_edges = igraph::E(full_graph)[betweenness]
   # Select one to return to the graph
   returning_edge = sample(between_edges, 1)
+  # Get vertex IDs which the returning edge connects
+  connecting_vertices = igraph::ends(full_graph, returning_edge)
+  # Get vertices belonging to the higher cluster number (the 'old' cluster)
+  old_clust_ids = which(membership == max(membership[connecting_vertices]))
+  # Get vertices belonging to the newly merged cluster
+  new_clust_ids = which(membership %in% membership[connecting_vertices])
   # Add the edge back to graph
-  merged_graph = igraph::add_edges(graph, igraph::ends(full_graph, returning_edge))
+  merged_graph = igraph::add_edges(graph, connecting_vertices)
   # Update the membership of each cluster
   merged_membership = igraph::components(merged_graph)$membership
   # Return the updated graph and new membership
-  return(list(graph = merged_graph, membership = merged_membership))
+  return(list(graph = merged_graph, membership = merged_membership, new_clust_ids = new_clust_ids, old_clust_ids = old_clust_ids))
 }
 
 #' Perform a cluster death operation followed by a cluster birth operation
@@ -418,6 +436,10 @@ graphDeath = function(graph, membership, full_graph) {
 #' @return A list containing two elements:
 #' \item{graph}{The input graph with the different set of active edges}
 #' \item{membership}{A vector of integers of length N with k unique integers which map each vertex to a cluster, likely different than input membership}
+#' \item{new_dclust_ids}{Vertex keys of the vertices belonging to the newly unified cluster before the birth operation}
+#' \item{old_dclust_ids}{Vertex keys of the vertices belonging only to the cluster being merged which has a higher number before the birth operation}
+#' \item{new_bclust_ids}{Vertex keys of the vertices belonging to the new cluster after the birth operation}
+#' \item{old_bclust_ids}{Vertex keys of the vertices from the cluster which was born excluding the ones from \code{new_bclust_ids}}
 #' @export
 #'
 #' @seealso
@@ -451,7 +473,9 @@ graphChange = function(graph, membership, full_graph) {
   # Then, perform a birth operation
   reborn_graph = graphBirth(dead_graph$graph, dead_graph$membership)
   # Return the result
-  return(list(graph = reborn_graph$graph, membership = reborn_graph$membership))
+  return(list(graph = reborn_graph$graph, membership = reborn_graph$membership,
+              new_dclust_ids = dead_graph$new_clust_ids, old_dclust_ids = dead_graph$old_clust_ids,
+              new_bclust_ids = reborn_graph$new_clust_ids, old_bclust_ids = reborn_graph$old_clust_ids))
 }
 
 #' Generate new spanning trees for each cluster
