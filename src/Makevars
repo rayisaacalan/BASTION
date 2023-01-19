@@ -1,0 +1,2 @@
+CXX11FLAGS= -Wno-deprecated-declarations -Wno-sign-compare -O3
+

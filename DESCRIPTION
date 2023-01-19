@@ -1,0 +1,23 @@
+Package: BASTION
+Title: Bayesian Additive Spanning Tree's Input / Output For Non-Parametric Regression
+Version: 2.0.0
+Authors@R: 
+    person(given = "Isaac",
+           family = "Ray",
+           role = c("aut", "cre"),
+           email = "null@stat.tamu.edu",
+           comment = c(ORCID = "0000-0003-2875-3672"))
+Description: The Bayesian Additive Regression Spanning Trees model is a novel ensemble model for non-parametric regression intended to be used on data (especially spatial) that lies on a complex or constrained domain, or a space with an irregular shape embedded in Euclidean space. Existing ensemble models for non-parametric regression such as Bayesian Additive Regression Trees (BART) or XGBoost are very popular and effective, but these models rely on binary decision tree partition models as their weak learners. These binary decision tree partitions do not respect domain constraints as they only make splits parallel to Euclidean axes. At the core of the BAST model is a novel weak learner; a random spanning tree manifold partition model.
+License: GPL (>= 3)
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.1
+SystemRequirements: C++11
+LinkingTo: 
+    Rcpp, BH, RcppClock
+Imports: 
+    Rcpp, igraph, cccd, stats
+Suggests: 
+    rmarkdown, knitr, ggplot2, ggraph, gridExtra, microbenchmark, Rfast, fdaPDE, FNN, Matrix, fields, mgcv, xtable, tidyverse, gamair
+VignetteBuilder: knitr
