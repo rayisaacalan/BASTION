@@ -4,7 +4,8 @@
 // [[Rcpp::plugins("cpp11")]]
 
 #include <RcppClock.h>
-#include <thread>
+#include <chrono>
+//#include <thread>
 #include <Rcpp.h>
 #include <iostream>
 #include <fstream>
@@ -72,11 +73,11 @@ public:
                                         mem.begin(), boost::get(
                                             boost::vertex_index, currentGraph
                                         )));
-      /*Rprintf("\n   New Membership:\n");
+     /* Rprintf("\n   New Membership:\n");
       for(int i = 0; i < mem.size(); ++i) {
-        //Rprintf("   %i ", mem[i]);
+        Rprintf("   %i ", mem[i]);
       }
-      //Rprintf("\n");*/
+      Rprintf("\n");*/
       membership.assign(mem.begin(), mem.end());
       updateClusts();
     }
@@ -129,7 +130,6 @@ public:
         // If they belong to different clusters, it IS a between edge (true)
         //Rprintf("         Checking an edge\n");
         result.emplace_back((membership[(*i).m_source]) != (membership[(*i).m_target]));
-        //Rprintf("         Checked an edge\n");
       }
       return(result);
     }
@@ -267,6 +267,7 @@ public:
       //printMembership();
       // First, find which edges were connecting different clusters
       std::vector<bool> between_edge_ids = getBetweenEdges();
+      
       // Clear the current graph state, reset it to the full graph
       currentGraph.clear();
       boost::copy_graph(*g, currentGraph);
@@ -286,12 +287,14 @@ public:
       minSpanTree();
       // Remove any edges connecting previously distinct clusters
       // Get list of current edges (iterator pair of beginning and end)
-      auto edges_iter = boost::edges(currentGraph);
-      for(auto i = edges_iter.first; i != edges_iter.second; ++i) {
-        // If an edge's ends connects vertices of different membership; remove it
-        if(membership[(*i).m_source] != membership[(*i).m_target]) {
-          boost::remove_edge(*i, currentGraph);
-        }
+      //auto edges_iter = boost::edges(currentGraph);
+      boost::graph_traits<Graph>::edge_iterator ei, ei_end, next;
+      tie(ei, ei_end) =boost::edges(currentGraph);
+      for(next = ei; ei != ei_end; ei = next) {
+        ++next;
+        if(membership[(*ei).m_source] != membership[(*ei).m_target]) 
+          boost::remove_edge(*ei, currentGraph);
+        
       }
       // Shouldn't be necessary; membership should not change after hyper step
       //updateMembership();
@@ -434,10 +437,9 @@ Rcpp::List BASTIONfit_cpp(const Rcpp::IntegerMatrix &edges,
   for(int i = 0; i < n_edges; ++i) {
     edge_vec.emplace_back(std::make_pair(edges(i, 0), edges(i, 1)));
   }
-//Rprintf("Created edge vector\n");
   // We now have our full graph with initial weights
   Graph g(edge_vec.begin(), edge_vec.end(), as<std::vector<double>>(weights).begin(), n_verts);
-//Rprintf("Constructed graph\n");
+  //Rprintf("Constructed graph\n");
   //clock.tock("graph_build");
   //clock.tick("learners_build");
   // Initialize a matrix to store each fitted value throughout the iterations
@@ -453,7 +455,7 @@ Rcpp::List BASTIONfit_cpp(const Rcpp::IntegerMatrix &edges,
     WeakLearners.emplace_back(Learner);
     K(learner) = (Learner.k);
   }
-//Rprintf("Initialized Weak Learners\n");
+  //Rprintf("Initialized Weak Learners\n");
   // Initialize some values to be used in the MCMC
   // Storage for output values
   int out_length = (((MCMC_iter) - BURNIN) % THIN);
@@ -466,7 +468,7 @@ Rcpp::List BASTIONfit_cpp(const Rcpp::IntegerMatrix &edges,
   // 0 is a birth, 1 is a death, 2 is a change, 3 is a hyper
   NumericVector moves = {0, 1, 2, 3};
   //clock.tock("learners_build");
-//Rprintf("Initialized MCMC Values\n");
+  //Rprintf("Initialized MCMC Values\n");
   for (int iter = 0; iter < MCMC_iter; ++iter) {
     //Rprintf("Entering iteration %i\n", iter);
     NumericMatrix MembershipByLearner(n_verts, n_learners);
