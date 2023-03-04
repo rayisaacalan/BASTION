@@ -28,9 +28,29 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// fitBASTmodel
+Rcpp::List fitBASTmodel(const Rcpp::IntegerMatrix& edges, const Rcpp::NumericVector& weights, const Rcpp::NumericVector& Y, const int MCMC_iter, const int BURNIN, const int THIN, const double init_sigmasq_y, const Rcpp::List init_mu_values, const Rcpp::List hyperpars);
+RcppExport SEXP _BASTION_fitBASTmodel(SEXP edgesSEXP, SEXP weightsSEXP, SEXP YSEXP, SEXP MCMC_iterSEXP, SEXP BURNINSEXP, SEXP THINSEXP, SEXP init_sigmasq_ySEXP, SEXP init_mu_valuesSEXP, SEXP hyperparsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Rcpp::IntegerMatrix& >::type edges(edgesSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type weights(weightsSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type Y(YSEXP);
+    Rcpp::traits::input_parameter< const int >::type MCMC_iter(MCMC_iterSEXP);
+    Rcpp::traits::input_parameter< const int >::type BURNIN(BURNINSEXP);
+    Rcpp::traits::input_parameter< const int >::type THIN(THINSEXP);
+    Rcpp::traits::input_parameter< const double >::type init_sigmasq_y(init_sigmasq_ySEXP);
+    Rcpp::traits::input_parameter< const Rcpp::List >::type init_mu_values(init_mu_valuesSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::List >::type hyperpars(hyperparsSEXP);
+    rcpp_result_gen = Rcpp::wrap(fitBASTmodel(edges, weights, Y, MCMC_iter, BURNIN, THIN, init_sigmasq_y, init_mu_values, hyperpars));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_BASTION_BASTIONfit_cpp", (DL_FUNC) &_BASTION_BASTIONfit_cpp, 8},
+    {"_BASTION_fitBASTmodel", (DL_FUNC) &_BASTION_fitBASTmodel, 9},
     {NULL, NULL, 0}
 };
 

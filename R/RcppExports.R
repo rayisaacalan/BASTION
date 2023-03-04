@@ -5,3 +5,7 @@ BASTIONfit_cpp <- function(edges, weights, Y, MCMC_iter, BURNIN, THIN, init_valu
     .Call(`_BASTION_BASTIONfit_cpp`, edges, weights, Y, MCMC_iter, BURNIN, THIN, init_values, hyperpars)
 }
 
+fitBASTmodel <- function(edges, weights, Y, MCMC_iter, BURNIN, THIN, init_sigmasq_y, init_mu_values, hyperpars) {
+    .Call(`_BASTION_fitBASTmodel`, edges, weights, Y, MCMC_iter, BURNIN, THIN, init_sigmasq_y, init_mu_values, hyperpars)
+}
+
