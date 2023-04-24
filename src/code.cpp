@@ -1,7 +1,7 @@
 
 // [[Rcpp::depends(RcppClock)]]
 // [[Rcpp::depends(BH)]]
-// [[Rcpp::plugins("cpp11")]]
+// [[Rcpp::plugins("cpp17")]]
 
 #include <RcppClock.h>
 #include <chrono>
